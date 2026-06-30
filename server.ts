@@ -17,11 +17,23 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_Peua73jJWTUy@ep-red-mountain-at5zo714-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
-    },
+let prismaInstance: PrismaClient | null = null;
+const prisma = new Proxy({} as PrismaClient, {
+  get(target, prop, receiver) {
+    if (!prismaInstance) {
+      prismaInstance = new PrismaClient({
+        datasources: {
+          db: {
+            url: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_Peua73jJWTUy@ep-red-mountain-at5zo714-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+          },
+        },
+      });
+    }
+    const value = Reflect.get(prismaInstance, prop, receiver);
+    if (typeof value === "function") {
+      return value.bind(prismaInstance);
+    }
+    return value;
   },
 });
 const app = express();
