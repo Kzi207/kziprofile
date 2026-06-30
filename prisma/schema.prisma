@@ -1,0 +1,120 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  username      String   @unique
+  password      String
+  name          String
+  nickname      String?
+  avatar        String?
+  birthday      String?
+  email         String   @unique
+  address       String?
+  bio           String?  @db.Text
+  socialGithub  String?
+  socialLinkedin String?
+  socialTwitter String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Skill {
+  id        String   @id @default(uuid())
+  name      String
+  category  String   // Frontend, Backend, Database, Cloud, AI, Tools
+  level     Int      // 0 to 100
+  iconName  String?  // Lucide icon name
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("skills")
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  title       String
+  description String   @db.Text
+  thumbnail   String
+  gallery     String[] // String array for screenshot images
+  githubUrl   String?
+  demoUrl     String?
+  techStack   String[] // Array of technologies
+  category    String   // Category of project (e.g. Fullstack, Web, Game, Mobile)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model Roadmap {
+  id          String   @id @default(uuid())
+  title       String
+  description String?  @db.Text
+  status      String   // Completed, Learning, Future
+  order       Int      @default(0)
+  date        String?  // Time period or quarter
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roadmaps")
+}
+
+model Experience {
+  id          String   @id @default(uuid())
+  company     String
+  position    String
+  description String   @db.Text
+  startDate   String
+  endDate     String?  // "Present" or date
+  current     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("experiences")
+}
+
+model Certificate {
+  id            String   @id @default(uuid())
+  name          String
+  issuer        String
+  issueDate     String
+  credentialUrl String?
+  imageUrl      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("certificates")
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  subject   String
+  message   String   @db.Text
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("messages")
+}
+
+model Setting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String   @db.Text
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("settings")
+}
