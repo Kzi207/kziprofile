@@ -7,9 +7,9 @@ import bcryptjs from "bcryptjs";
 import { z } from "zod";
 import dotenv from "dotenv";
 import cors from "cors";
-import { CHILL_LINKS_DEFAULT } from "./src/data/chill_links";
-import { GAI_LINKS_DEFAULT } from "./src/data/gai_links";
-import { MUSIC_LINKS_DEFAULT } from "./src/data/music_links";
+import { CHILL_LINKS_DEFAULT } from "./src/data/chill_links.js";
+import { GAI_LINKS_DEFAULT } from "./src/data/gai_links.js";
+import { MUSIC_LINKS_DEFAULT } from "./src/data/music_links.js";
 
 // Load environment variables
 dotenv.config();
