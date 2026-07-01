@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quy đổi điểm Học bạ sang điểm thi THPT 2025 - ĐHCT</title>
+<link rel="icon" href="https://files.catbox.moe/4gi119.jpg" type="image/jpeg">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root {
+    --bg-dark: #070312;
+    --bg-card: rgba(18, 11, 41, 0.7);
+    --border-cyan: rgba(6, 182, 212, 0.2);
+    --border-pink: rgba(236, 72, 153, 0.2);
+    --text-primary: #f3f4f6;
+    --text-muted: #9ca3af;
+    --neon-cyan: #06b6d4;
+    --neon-pink: #ec4899;
+    --neon-green: #10b981;
+    --neon-yellow: #f59e0b;
+    --glow-cyan: 0 0 15px rgba(6, 182, 212, 0.3);
+    --glow-pink: 0 0 15px rgba(236, 72, 153, 0.3);
+    --glow-green: 0 0 15px rgba(16, 185, 129, 0.3);
+  }
+
+  * {
+    box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(236, 72, 153, 0.4) #0a061c;
+  }
+
+  /* Custom glowing scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a061c;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(236, 72, 153, 0.4);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(244, 63, 94, 0.8);
+  }
+
+  body {
+    margin: 0;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-dark);
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(236, 72, 153, 0.15) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.15) 0px, transparent 50%),
+      linear-gradient(rgba(18, 11, 41, 0.2) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(18, 11, 41, 0.2) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
+    color: var(--text-primary);
+    padding: 32px 16px;
+    min-h: 100vh;
+  }
+
+  .wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* Header Section */
+  header {
+    position: relative;
+    background: linear-gradient(135deg, rgba(30, 16, 74, 0.8), rgba(12, 6, 33, 0.9));
+    border: 1px solid var(--border-pink);
+    box-shadow: var(--glow-pink);
+    padding: 32px;
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+  }
+
+  header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--neon-pink), var(--neon-cyan));
+  }
+
+  .header-content {
+    position: relative;
+    z-index: 2;
+  }
+
+  .header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(236, 72, 153, 0.1);
+    border: 1px solid rgba(236, 72, 153, 0.3);
+    color: var(--neon-pink);
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  header h1 {
+    margin: 0 0 12px;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(90deg, #ffffff, #e2e8f0);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  header p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+    max-width: 850px;
+  }
+
+  /* Two-Column Layout */
+  .grid-layout {
+    display: grid;
+    grid-template-columns: 480px 1fr;
+    gap: 24px;
+  }
+
+  @media (max-width: 1024px) {
+    .grid-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Card Styles */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-cyan);
+    border-radius: 16px;
+    padding: 24px;
+    backdrop-filter: blur(16px);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    height: fit-content;
+  }
+
+  .card.glowing-pink {
+    border-color: var(--border-pink);
+  }
+
+  .card h2 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 20px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .card h2 svg {
+    color: var(--neon-cyan);
+  }
+
+  .card.glowing-pink h2 svg {
+    color: var(--neon-pink);
+  }
+
+  /* Inputs Grid */
+  .subjects-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  @media (max-width: 480px) {
+    .subjects-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    transition: all 0.2s ease;
+  }
+
+  .field:hover, .field:focus-within {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(6, 182, 212, 0.4);
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.05);
+  }
+
+  .field label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .field input {
+    width: 100%;
+    background: rgba(7, 4, 20, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: 'JetBrains Mono', monospace;
+    outline: none;
+    transition: all 0.2s ease;
+  }
+
+  .field input:focus {
+    border-color: var(--neon-cyan);
+    box-shadow: var(--glow-cyan);
+  }
+
+  /* Floating Action Buttons */
+  .actions {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    background: linear-gradient(135deg, var(--neon-pink), #c084fc);
+    color: #fff;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--glow-pink);
+  }
+
+  button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 20px rgba(236, 72, 153, 0.5);
+  }
+
+  button:active {
+    transform: translateY(0);
+  }
+
+  button.secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: none;
+  }
+
+  button.secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--neon-cyan);
+    box-shadow: var(--glow-cyan);
+  }
+
+  /* Tabs Layout */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 8px;
+  }
+
+  .tab-btn {
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    box-shadow: none;
+    padding: 8px 16px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+  }
+
+  .tab-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .tab-btn.active {
+    color: var(--neon-cyan);
+    background: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+  }
+
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  /* Tables Styles */
+  .table-container {
+    overflow-x: auto;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    text-align: left;
+  }
+
+  th {
+    background: rgba(18, 11, 41, 0.8);
+    color: var(--neon-cyan);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(6, 182, 212, 0.2);
+  }
+
+  td {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.01);
+  }
+
+  tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  /* Values styling */
+  .score {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    color: var(--neon-green);
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+    font-size: 16px;
+  }
+
+  .badge {
+    display: inline-block;
+    background: rgba(6, 182, 212, 0.1);
+    color: var(--neon-cyan);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .badge.pink {
+    background: rgba(236, 72, 153, 0.1);
+    color: var(--neon-pink);
+    border-color: rgba(236, 72, 153, 0.3);
+  }
+
+  .empty {
+    padding: 48px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .empty svg {
+    color: var(--neon-pink);
+    opacity: 0.5;
+  }
+
+  /* Interpolation visualization widget */
+  .interpolation-widget {
+    background: rgba(7, 4, 20, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .visual-line-container {
+    position: relative;
+    height: 36px;
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .visual-track {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    position: relative;
+  }
+
+  .visual-interval {
+    position: absolute;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(6, 182, 212, 0.4), rgba(236, 72, 153, 0.4));
+    border-radius: 999px;
+  }
+
+  .visual-marker {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border: 3px solid var(--neon-pink);
+    box-shadow: 0 0 10px var(--neon-pink);
+    border-radius: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+  }
+
+  .visual-marker::after {
+    content: attr(data-val);
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(236, 72, 153, 0.9);
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    white-space: nowrap;
+    box-shadow: var(--glow-pink);
+  }
+
+  .visual-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+  }
+
+  .visual-labels span strong {
+    color: #fff;
+  }
+
+  /* Search & Filter bar */
+  .filter-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .search-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .search-wrapper input {
+    width: 100%;
+    background: rgba(7, 4, 20, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    padding: 10px 12px 10px 36px;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s ease;
+  }
+
+  .search-wrapper input:focus {
+    border-color: var(--neon-cyan);
+    box-shadow: var(--glow-cyan);
+  }
+
+  .search-wrapper svg {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    width: 16px;
+    height: 16px;
+  }
+
+  .combo-filters {
+    display: flex;
+    gap: 6px;
+  }
+
+  .filter-pill {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 6px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .filter-pill:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .filter-pill.active {
+    background: rgba(236, 72, 153, 0.1);
+    color: var(--neon-pink);
+    border-color: rgba(236, 72, 153, 0.3);
+  }
+
+  /* Info/Formula design */
+  .formula-box {
+    background: rgba(6, 182, 212, 0.05);
+    border: 1px solid var(--border-cyan);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 16px;
+  }
+
+  .formula-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--neon-cyan);
+    margin: 0 0 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .formula-expr {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 8px 12px;
+    border-radius: 6px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .formula-vars {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-top: 8px;
+  }
+
+  .formula-vars strong {
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Utility details */
+  .step-formula {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .step-formula b {
+    color: var(--neon-pink);
+  }
+
+  .combo-detail-grid {
+    display: grid;
+    gap: 6px;
+  }
+
+  .combo-detail-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+  }
+
+  .footer-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 32px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 16px;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Glow status */
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+  .status-badge.complete {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--neon-green);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+  }
+  .status-badge.missing {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--neon-yellow);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+
+  /* Reference select */
+  .reference-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .custom-select {
+    position: relative;
+    min-width: 220px;
+  }
+
+  .custom-select select {
+    width: 100%;
+    background: rgba(7, 4, 20, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    padding: 10px 32px 10px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    appearance: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .custom-select select:focus {
+    border-color: var(--neon-cyan);
+    box-shadow: var(--glow-cyan);
+  }
+
+  .custom-select::after {
+    content: '▼';
+    font-size: 10px;
+    color: var(--text-muted);
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <!-- Header -->
+  <header>
+    <div class="header-content">
+      <div class="header-badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
+        Đại học Cần Thơ (CTU)
+      </div>
+      <h1>Quy đổi điểm Học bạ → Điểm thi THPT 2025</h1>
+      <p>Công cụ quy đổi điểm chính thức theo Thông báo tuyển sinh số 2939/TB-ĐHCT-ĐT ngày 13/8/2025 của Trường Đại học Cần Thơ. Điểm học bạ trung bình của 3 năm lớp 10, 11 và 12 (Phương thức xét tuyển 3) của từng môn sẽ được nội suy tuyến tính sang thang điểm thi tốt nghiệp THPT 2025 tương ứng.</p>
+    </div>
+  </header>
+
+  <!-- Content Grid -->
+  <div class="grid-layout">
+    
+    <!-- Left Column: Grade Inputs & Formula Info -->
+    <div style="display: flex; flex-direction: column; gap: 24px;">
+      
+      <!-- Card: Inputs -->
+      <div class="card glowing-pink">
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+          Nhập điểm Học bạ (thang 10)
+        </h2>
+        <div class="subjects-grid" id="subjectInputs"></div>
+        <div class="actions">
+          <button onclick="calculateAll()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Tính kết quả
+          </button>
+          <button class="secondary" onclick="fillDemo()">Điền dữ liệu mẫu</button>
+          <button class="secondary" onclick="clearAll()">Xóa hết</button>
+        </div>
+      </div>
+
+      <!-- Card: Formulas -->
+      <div class="card">
+        <h2>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          Công thức nội suy tuyến tính
+        </h2>
+        <p style="margin:0 0 12px 0; font-size: 13.5px; line-height: 1.5; color: var(--text-muted);">
+          Điểm quy đổi được nội suy trong khoảng mốc giữa hai giá trị học bạ và thi THPT tương ứng.
+        </p>
+        <div class="formula-box">
+          <div class="formula-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Công thức nội suy
+          </div>
+          <div class="formula-expr">y = c + &lpar;x - a&rpar; / &lpar;b - a&rpar; * &lpar;d - c&rpar;</div>
+          <div class="formula-vars">
+            • <strong>x</strong>: Điểm Học bạ đã nhập.<br>
+            • <strong>y</strong>: Điểm quy đổi THPT tương ứng (làm tròn 2 chữ số thập phân).<br>
+            • <strong>a, b</strong>: Điểm mốc Học bạ cận dưới và cận trên (<strong>a < x ≤ b</strong>).<br>
+            • <strong>c, d</strong>: Điểm mốc thi THPT cận dưới và cận trên tương ứng (<strong>c < y ≤ d</strong>).
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Results & Reference Tables (Tabs) -->
+    <div class="card">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('tab-subjects')">Điểm Quy Đổi Từng Môn</button>
+        <button class="tab-btn" onclick="switchTab('tab-combos')">Tổ Hợp Xét Tuyển</button>
+        <button class="tab-btn" onclick="switchTab('tab-reference')">Bảng Quy Đổi Gốc</button>
+      </div>
+
+      <!-- Tab 1: Subject Results -->
+      <div id="tab-subjects" class="tab-content active">
+        <div id="subjectResults">
+          <div class="empty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span>Nhập điểm học bạ bên trái để xem kết quả quy đổi và biểu đồ chi tiết từng môn.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Combo Scores -->
+      <div id="tab-combos" class="tab-content">
+        <div class="filter-bar">
+          <div class="search-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="comboSearch" placeholder="Tìm kiếm theo mã tổ hợp (VD: A00, D01) hoặc môn học..." oninput="renderCombos()">
+          </div>
+          <div class="combo-filters">
+            <div class="filter-pill active" onclick="setComboFilter('ALL', this)">Tất cả</div>
+            <div class="filter-pill" onclick="setComboFilter('COMPLETE', this)">Đủ môn</div>
+            <div class="filter-pill" onclick="setComboFilter('A', this)">Khối A</div>
+            <div class="filter-pill" onclick="setComboFilter('B', this)">Khối B</div>
+            <div class="filter-pill" onclick="setComboFilter('C', this)">Khối C</div>
+            <div class="filter-pill" onclick="setComboFilter('D', this)">Khối D</div>
+          </div>
+        </div>
+        <div id="comboResults">
+          <div class="empty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            <span>Hãy nhập đủ điểm tối thiểu 3 môn thuộc một tổ hợp để xem tổng điểm quy đổi xét tuyển.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: Reference Table -->
+      <div id="tab-reference" class="tab-content">
+        <div class="reference-header">
+          <div style="font-size: 13.5px; color: var(--text-muted);">Chọn môn học để xem phụ lục khoảng điểm gốc:</div>
+          <div class="custom-select">
+            <select id="tableSubjectSelect" onchange="renderReferenceTable()"></select>
+          </div>
+        </div>
+        <div id="referenceTable"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <p class="footer-note">
+    Dữ liệu được biên soạn chính xác theo phụ lục chính thức đính kèm Thông báo số 2939/TB-ĐHCT-ĐT Trường Đại học Cần Thơ.<br>
+    © 2025 - Bản quyền công cụ thuộc về Đại học Cần Thơ. Được thiết kế lại với giao diện tối ưu Premium Cyberpunk.
+  </p>
+</div>
+
+<script>
+/* ===================== DỮ LIỆU QUY ĐỔI (Phụ lục TB 2939/TB-ĐHCT-ĐT) ===================== */
+const SUBJECT_TABLES = {
+  "Toán": [
+    {a:0,    b:3.43,  c:0,    d:1.05},
+    {a:3.43, b:6.00,  c:1.05, d:3.25},
+    {a:6.00, b:6.57,  c:3.25, d:3.85},
+    {a:6.57, b:7.03,  c:3.85, d:4.25},
+    {a:7.03, b:7.40,  c:4.25, d:4.60},
+    {a:7.40, b:7.77,  c:4.60, d:5.00},
+    {a:7.77, b:8.13,  c:5.00, d:5.25},
+    {a:8.13, b:8.47,  c:5.25, d:5.75},
+    {a:8.47, b:8.83,  c:5.75, d:6.25},
+    {a:8.83, b:9.20,  c:6.25, d:7.00},
+    {a:9.20, b:9.47,  c:7.00, d:7.50},
+    {a:9.47, b:9.60,  c:7.50, d:8.00},
+    {a:9.60, b:10.00, c:8.00, d:10.00}
+  ],
+  "Vật lí": [
+    {a:0,    b:2.00,  c:0,    d:1.85},
+    {a:2.00, b:6.83,  c:1.85, d:5.25},
+    {a:6.83, b:7.37,  c:5.25, d:5.85},
+    {a:7.37, b:7.77,  c:5.85, d:6.35},
+    {a:7.77, b:8.10,  c:6.35, d:6.75},
+    {a:8.10, b:8.37,  c:6.75, d:7.10},
+    {a:8.37, b:8.63,  c:7.10, d:7.50},
+    {a:8.63, b:8.87,  c:7.50, d:7.75},
+    {a:8.87, b:9.13,  c:7.75, d:8.25},
+    {a:9.13, b:9.40,  c:8.25, d:8.75},
+    {a:9.40, b:9.60,  c:8.75, d:9.25},
+    {a:9.60, b:9.70,  c:9.25, d:9.50},
+    {a:9.70, b:10.00, c:9.50, d:10.00}
+  ],
+  "Hóa học": [
+    {a:0,    b:2.43,  c:0,    d:1.25},
+    {a:2.43, b:6.93,  c:1.25, d:4.00},
+    {a:6.93, b:7.47,  c:4.00, d:4.60},
+    {a:7.47, b:7.83,  c:4.60, d:5.10},
+    {a:7.83, b:8.17,  c:5.10, d:5.50},
+    {a:8.17, b:8.43,  c:5.50, d:6.00},
+    {a:8.43, b:8.70,  c:6.00, d:6.50},
+    {a:8.70, b:8.93,  c:6.50, d:7.00},
+    {a:8.93, b:9.17,  c:7.00, d:7.75},
+    {a:9.17, b:9.43,  c:7.75, d:8.50},
+    {a:9.43, b:9.60,  c:8.50, d:8.75},
+    {a:9.60, b:9.70,  c:8.75, d:9.00},
+    {a:9.70, b:10.00, c:9.00, d:10.00}
+  ],
+  "Sinh học": [
+    {a:0,    b:2.47,  c:0,    d:1.85},
+    {a:2.47, b:7.23,  c:1.85, d:4.35},
+    {a:7.23, b:7.73,  c:4.35, d:4.95},
+    {a:7.73, b:8.07,  c:4.95, d:5.35},
+    {a:8.07, b:8.33,  c:5.35, d:5.75},
+    {a:8.33, b:8.54,  c:5.75, d:6.10},
+    {a:8.54, b:8.77,  c:6.10, d:6.50},
+    {a:8.77, b:9.00,  c:6.50, d:6.75},
+    {a:9.00, b:9.20,  c:6.75, d:7.25},
+    {a:9.20, b:9.43,  c:7.25, d:7.75},
+    {a:9.43, b:9.60,  c:7.75, d:8.25},
+    {a:9.60, b:9.67,  c:8.25, d:8.50},
+    {a:9.67, b:10.00, c:8.50, d:10.00}
+  ],
+  "Lịch sử": [
+    {a:0,    b:5.10,  c:0,    d:2.00},
+    {a:5.10, b:6.97,  c:2.00, d:5.35},
+    {a:6.97, b:7.40,  c:5.35, d:6.10},
+    {a:7.40, b:7.73,  c:6.10, d:6.75},
+    {a:7.73, b:8.00,  c:6.75, d:7.10},
+    {a:8.00, b:8.23,  c:7.10, d:7.50},
+    {a:8.23, b:8.50,  c:7.50, d:7.85},
+    {a:8.50, b:8.70,  c:7.85, d:8.25},
+    {a:8.70, b:8.93,  c:8.25, d:8.50},
+    {a:8.93, b:9.23,  c:8.50, d:9.00},
+    {a:9.23, b:9.43,  c:9.00, d:9.25},
+    {a:9.43, b:9.53,  c:9.25, d:9.50},
+    {a:9.53, b:10.00, c:9.50, d:10.00}
+  ],
+  "Địa lí": [
+    {a:0,    b:2.37,  c:0,    d:1.85},
+    {a:2.37, b:6.73,  c:1.85, d:5.50},
+    {a:6.73, b:7.17,  c:5.50, d:6.25},
+    {a:7.17, b:7.50,  c:6.25, d:6.75},
+    {a:7.50, b:7.80,  c:6.75, d:7.25},
+    {a:7.80, b:8.07,  c:7.25, d:7.75},
+    {a:8.07, b:8.30,  c:7.75, d:8.25},
+    {a:8.30, b:8.57,  c:8.25, d:8.50},
+    {a:8.57, b:8.83,  c:8.50, d:9.00},
+    {a:8.83, b:9.13,  c:9.00, d:9.50},
+    {a:9.13, b:9.37,  c:9.50, d:9.75},
+    {a:9.37, b:9.50,  c:9.75, d:10.00},
+    {a:9.50, b:10.00, c:10.00,d:10.00}
+  ],
+  "Tiếng Anh": [
+    {a:0,    b:1.93,  c:0,    d:1.25},
+    {a:1.93, b:6.63,  c:1.25, d:3.50},
+    {a:6.63, b:7.17,  c:3.50, d:4.00},
+    {a:7.17, b:7.57,  c:4.00, d:4.50},
+    {a:7.57, b:7.90,  c:4.50, d:4.75},
+    {a:7.90, b:8.20,  c:4.75, d:5.00},
+    {a:8.20, b:8.47,  c:5.00, d:5.50},
+    {a:8.47, b:8.70,  c:5.50, d:5.75},
+    {a:8.70, b:8.97,  c:5.75, d:6.25},
+    {a:8.97, b:9.27,  c:6.25, d:6.75},
+    {a:9.27, b:9.47,  c:6.75, d:7.50},
+    {a:9.47, b:9.57,  c:7.50, d:7.75},
+    {a:9.57, b:9.97,  c:7.75, d:10.00}
+  ],
+  "Ngữ văn": [
+    {a:0,    b:3.80,  c:0,    d:2.25},
+    {a:3.80, b:6.43,  c:2.25, d:6.00},
+    {a:6.43, b:6.87,  c:6.00, d:6.50},
+    {a:6.87, b:7.17,  c:6.50, d:7.00},
+    {a:7.17, b:7.43,  c:7.00, d:7.25},
+    {a:7.43, b:7.67,  c:7.25, d:7.50},
+    {a:7.67, b:7.90,  c:7.50, d:7.75},
+    {a:7.90, b:8.10,  c:7.75, d:8.00},
+    {a:8.10, b:8.37,  c:8.00, d:8.25},
+    {a:8.37, b:8.67,  c:8.25, d:8.50},
+    {a:8.67, b:8.90,  c:8.50, d:8.75},
+    {a:8.90, b:9.03,  c:8.75, d:9.00},
+    {a:9.03, b:9.93,  c:9.00, d:9.75}
+  ],
+  "Tin học": [
+    {a:0,    b:3.03,  c:0,    d:2.75},
+    {a:3.03, b:7.21,  c:2.75, d:5.35},
+    {a:7.21, b:7.70,  c:5.35, d:6.10},
+    {a:7.70, b:7.97,  c:6.10, d:6.60},
+    {a:7.97, b:8.27,  c:6.60, d:7.00},
+    {a:8.27, b:8.50,  c:7.00, d:7.25},
+    {a:8.50, b:8.67,  c:7.25, d:7.75},
+    {a:8.67, b:8.90,  c:7.75, d:8.00},
+    {a:8.90, b:9.10,  c:8.00, d:8.25},
+    {a:9.10, b:9.40,  c:8.25, d:9.00},
+    {a:9.40, b:9.57,  c:9.00, d:9.25},
+    {a:9.57, b:9.67,  c:9.25, d:9.61},
+    {a:9.67, b:10.00, c:9.61, d:10.00}
+  ],
+  "Công nghệ công nghiệp": [
+    {a:0,    b:3.20,  c:0,    d:3.60},
+    {a:3.20, b:6.67,  c:3.60, d:4.63},
+    {a:6.67, b:7.43,  c:4.63, d:5.50},
+    {a:7.43, b:7.66,  c:5.50, d:6.10},
+    {a:7.66, b:7.98,  c:6.10, d:6.25},
+    {a:7.98, b:8.17,  c:6.25, d:6.50},
+    {a:8.17, b:8.33,  c:6.50, d:7.10},
+    {a:8.33, b:8.43,  c:7.10, d:7.91},
+    {a:8.43, b:8.67,  c:7.91, d:8.25},
+    {a:8.67, b:9.05,  c:8.25, d:8.95},
+    {a:9.05, b:9.13,  c:8.95, d:9.50},
+    {a:9.13, b:9.27,  c:9.50, d:10.00},
+    {a:9.27, b:10.00, c:10.00,d:10.00}
+  ],
+  "GDKT&PL": [
+    {a:0,    b:2.23,  c:0,    d:3.60},
+    {a:2.23, b:7.10,  c:3.60, d:6.75},
+    {a:7.10, b:7.50,  c:6.75, d:7.25},
+    {a:7.50, b:7.80,  c:7.25, d:7.75},
+    {a:7.80, b:8.03,  c:7.75, d:8.00},
+    {a:8.03, b:8.23,  c:8.00, d:8.25},
+    {a:8.23, b:8.47,  c:8.25, d:8.50},
+    {a:8.47, b:8.67,  c:8.50, d:8.75},
+    {a:8.67, b:8.90,  c:8.75, d:9.00},
+    {a:8.90, b:9.20,  c:9.00, d:9.25},
+    {a:9.20, b:9.40,  c:9.25, d:9.50},
+    {a:9.40, b:9.53,  c:9.50, d:9.75},
+    {a:9.53, b:10.00, c:9.75, d:10.00}
+  ]
+};
+
+const COMBOS = {
+  "A00":["Toán","Vật lí","Hóa học"],
+  "A01":["Toán","Vật lí","Tiếng Anh"],
+  "A02":["Toán","Vật lí","Sinh học"],
+  "A03":["Toán","Vật lí","Lịch sử"],
+  "A04":["Toán","Vật lí","Địa lí"],
+  "B00":["Toán","Hóa học","Sinh học"],
+  "B03":["Toán","Sinh học","Ngữ văn"],
+  "B08":["Toán","Sinh học","Tiếng Anh"],
+  "C00":["Ngữ văn","Lịch sử","Địa lí"],
+  "C01":["Toán","Ngữ văn","Vật lí"],
+  "C02":["Toán","Ngữ văn","Hóa học"],
+  "C03":["Ngữ văn","Toán","Lịch sử"],
+  "C05":["Ngữ văn","Vật lí","Hóa học"],
+  "C08":["Ngữ văn","Hóa học","Sinh học"],
+  "D01":["Toán","Ngữ văn","Tiếng Anh"],
+  "D07":["Toán","Hóa học","Tiếng Anh"],
+  "D09":["Toán","Lịch sử","Tiếng Anh"],
+  "D10":["Toán","Địa lí","Tiếng Anh"],
+  "D11":["Ngữ văn","Vật lí","Tiếng Anh"],
+  "D12":["Ngữ văn","Hóa học","Tiếng Anh"],
+  "D13":["Ngữ văn","Sinh học","Tiếng Anh"],
+  "D14":["Ngữ văn","Lịch sử","Tiếng Anh"],
+  "D15":["Ngữ văn","Địa lí","Tiếng Anh"],
+  "X01":["Toán","Ngữ văn","GDKT&PL"],
+  "X02":["Toán","Ngữ văn","Tin học"],
+  "X05":["Toán","Vật lí","GDKT&PL"],
+  "X06":["Toán","Vật lí","Tin học"],
+  "X07":["Toán","Vật lí","Công nghệ công nghiệp"],
+  "X10":["Toán","Hóa học","Tin học"],
+  "X11":["Toán","Hóa học","Công nghệ công nghiệp"],
+  "X13":["Toán","Sinh học","GDKT&PL"],
+  "X14":["Toán","Sinh học","Tin học"],
+  "X16":["Toán","Sinh học","Công nghệ công nghiệp"],
+  "X25":["Toán","Tiếng Anh","GDKT&PL"],
+  "X26":["Toán","Tin học","Tiếng Anh"],
+  "X27":["Toán","Tiếng Anh","Công nghệ công nghiệp"],
+  "X59":["Ngữ văn","Vật lí","Tin học"],
+  "X70":["Ngữ văn","Lịch sử","GDKT&PL"],
+  "X74":["Ngữ văn","Địa lí","GDKT&PL"],
+  "X78":["Ngữ văn","Tiếng Anh","GDKT&PL"]
+};
+
+const SUBJECT_LIST = Object.keys(SUBJECT_TABLES);
+let lastResults = {};
+let activeComboFilter = "ALL";
+
+/* ===================== LOGIC QUY ĐỔI ===================== */
+function convertScoreDetailed(subject, x) {
+  if (x === null || x === undefined || isNaN(x)) return null;
+  x = Math.max(0, Math.min(10, x));
+  const table = SUBJECT_TABLES[subject];
+  let row = null;
+  for (const r of table) {
+    if (x > r.a - 1e-9 && x <= r.b + 1e-9) { 
+      row = r; 
+      break; 
+    }
+  }
+  if (!row && x <= 0) row = table[0];
+  if (!row) return null;
+
+  let y;
+  if (row.b === row.a) {
+    y = row.c;
+  } else {
+    y = row.c + (x - row.a) / (row.b - row.a) * (row.d - row.c);
+  }
+  y = Math.round(y * 100) / 100;
+  return { x, y, a: row.a, b: row.b, c: row.c, d: row.d };
+}
+
+/* ===================== RENDER INPUTS ===================== */
+function buildInputs() {
+  const grid = document.getElementById('subjectInputs');
+  grid.innerHTML = SUBJECT_LIST.map(subj => `
+    <div class="field">
+      <label for="inp_${subj}">${subj}</label>
+      <div class="input-wrapper">
+        <input type="number" id="inp_${subj}" min="0" max="10" step="0.01" placeholder="0.00" oninput="validateInput(this); autoCalculate();">
+      </div>
+    </div>
+  `).join('');
+
+  // Load from localStorage if present
+  loadSavedData();
+}
+
+function validateInput(el) {
+  let val = parseFloat(el.value);
+  if (val > 10) el.value = 10;
+  if (val < 0) el.value = 0;
+}
+
+function fillDemo() {
+  const demo = {
+    "Toán": 8.25,
+    "Vật lí": 8.10,
+    "Hóa học": 7.80,
+    "Ngữ văn": 8.25,
+    "Tiếng Anh": 7.90,
+    "Sinh học": 8.00,
+    "Lịch sử": 8.40,
+    "Địa lí": 8.20,
+    "Tin học": 8.30,
+    "Công nghệ công nghiệp": 8.00,
+    "GDKT&PL": 8.10
+  };
+  SUBJECT_LIST.forEach(s => {
+    const el = document.getElementById('inp_' + s);
+    if (demo[s] !== undefined) el.value = demo[s];
+  });
+  calculateAll();
+}
+
+function clearAll() {
+  SUBJECT_LIST.forEach(s => { 
+    document.getElementById('inp_' + s).value = ''; 
+  });
+  lastResults = {};
+  localStorage.removeItem('ctu_quydoi_scores');
+  
+  document.getElementById('subjectResults').innerHTML = `
+    <div class="empty">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      <span>Nhập điểm học bạ bên trái để xem kết quả quy đổi và biểu đồ chi tiết từng môn.</span>
+    </div>
+  `;
+  document.getElementById('comboResults').innerHTML = `
+    <div class="empty">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      <span>Hãy nhập đủ điểm tối thiểu 3 môn thuộc một tổ hợp để xem tổng điểm quy đổi xét tuyển.</span>
+    </div>
+  `;
+}
+
+function autoCalculate() {
+  // Silent auto calculate on input changes to keep data fresh, but doesn't force view switches
+  lastResults = {};
+  const scoresObj = {};
+  SUBJECT_LIST.forEach(subj => {
+    const raw = document.getElementById('inp_' + subj).value;
+    if (raw === '' || raw === null) return;
+    const x = parseFloat(raw);
+    if (isNaN(x)) return;
+    scoresObj[subj] = x;
+    const detail = convertScoreDetailed(subj, x);
+    if (detail) lastResults[subj] = detail;
+  });
+  localStorage.setItem('ctu_quydoi_scores', JSON.stringify(scoresObj));
+  renderSubjectResults(true);
+  renderCombos();
+}
+
+function calculateAll() {
+  autoCalculate();
+  // Play subtle feedback animation/scroll if needed, or activate the results tab
+  switchTab('tab-subjects');
+}
+
+function loadSavedData() {
+  try {
+    const saved = localStorage.getItem('ctu_quydoi_scores');
+    if (saved) {
+      const scores = JSON.parse(saved);
+      Object.entries(scores).forEach(([subj, val]) => {
+        const el = document.getElementById('inp_' + subj);
+        if (el) el.value = val;
+      });
+      autoCalculate();
+    }
+  } catch (e) {
+    console.error("Lỗi khi khôi phục dữ liệu đã lưu:", e);
+  }
+}
+
+function fmt(n) { 
+  return n.toFixed(2).replace('.', ','); 
+}
+
+/* ===================== RENDER SUBJECT RESULTS ===================== */
+function renderSubjectResults(isAuto = false) {
+  const container = document.getElementById('subjectResults');
+  const entries = Object.entries(lastResults);
+  
+  if (entries.length === 0) {
+    if (!isAuto) {
+      container.innerHTML = `
+        <div class="empty">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span>Chưa có môn nào được nhập điểm.</span>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  let cardsHtml = entries.map(([subj, d]) => {
+    const rangeLength = d.b - d.a;
+    const ratio = rangeLength === 0 ? 0 : ((d.x - d.a) / rangeLength) * 100;
+    
+    const formulaText = (d.b === d.a)
+      ? `y = c = ${fmt(d.c)}`
+      : `y = ${fmt(d.c)} + (${fmt(d.x)} − ${fmt(d.a)}) / (${fmt(d.b)} − ${fmt(d.a)}) × (${fmt(d.d)} − ${fmt(d.c)}) = <strong>${fmt(d.y)}</strong>`;
+
+    return `
+      <div class="field" style="margin-bottom: 16px; background: rgba(255,255,255,0.01); display: block; border-color: rgba(255,255,255,0.05);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <span style="font-weight: 700; color: #fff; font-size: 15px;">${subj}</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span class="badge">Học bạ: ${fmt(d.x)}</span>
+            <span class="badge pink">Quy đổi: ${fmt(d.y)}</span>
+          </div>
+        </div>
+
+        <div class="step-formula" style="margin-bottom: 8px;">
+          <span>Phép nội suy: </span> ${formulaText}
+        </div>
+
+        <!-- Interpolation track slider visualization -->
+        <div class="interpolation-widget">
+          <div class="visual-labels">
+            <span>Mốc học bạ <strong>a = ${fmt(d.a)}</strong></span>
+            <span>Mốc học bạ <strong>b = ${fmt(d.b)}</strong></span>
+          </div>
+          
+          <div class="visual-line-container">
+            <div class="visual-track">
+              <div class="visual-interval" style="left: 0%; width: 100%;"></div>
+              <div class="visual-marker" style="left: ${ratio}%;" data-val="x = ${fmt(d.x)}"></div>
+            </div>
+          </div>
+
+          <div class="visual-labels">
+            <span>Mốc thi THPT <strong>c = ${fmt(d.c)}</strong></span>
+            <span>Mốc thi THPT <strong>d = ${fmt(d.d)}</strong></span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
+      ${cardsHtml}
+    </div>
+  `;
+}
+
+/* ===================== RENDER COMBOS ===================== */
+function setComboFilter(filter, el) {
+  activeComboFilter = filter;
+  document.querySelectorAll('.filter-pill').forEach(btn => btn.classList.remove('active'));
+  el.classList.add('active');
+  renderCombos();
+}
+
+function renderCombos() {
+  const container = document.getElementById('comboResults');
+  const query = (document.getElementById('comboSearch').value || '').trim().toUpperCase();
+
+  const rows = [];
+  for (const [code, subjects] of Object.entries(COMBOS)) {
+    const label = subjects.join(', ');
+    
+    // Check Search Query
+    if (query && !code.includes(query) && !label.toUpperCase().includes(query)) continue;
+
+    // Check Tabs Category Filter
+    if (activeComboFilter !== 'ALL' && activeComboFilter !== 'COMPLETE') {
+      if (!code.startsWith(activeComboFilter)) continue;
+    }
+
+    const scores = subjects.map(s => lastResults[s] ? lastResults[s].y : null);
+    const complete = scores.every(v => v !== null);
+    const total = complete ? scores.reduce((a, b) => a + b, 0) : null;
+
+    // Filter "Đủ môn" (Complete) only
+    if (activeComboFilter === 'COMPLETE' && !complete) continue;
+
+    rows.push({ code, subjects, scores, complete, total });
+  }
+
+  if (rows.length === 0) {
+    container.innerHTML = `
+      <div class="empty">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        <span>Không tìm thấy tổ hợp phù hợp.</span>
+      </div>
+    `;
+    return;
+  }
+
+  // Sort: completed combinations at the top, sorted by total descending
+  rows.sort((a, b) => {
+    if (a.complete && b.complete) return b.total - a.total;
+    if (a.complete) return -1;
+    if (b.complete) return 1;
+    return a.code.localeCompare(b.code);
+  });
+
+  const cardsHtml = rows.map(r => {
+    const detailRows = r.subjects.map((s, i) => {
+      const scoreVal = r.scores[i];
+      const scoreStr = scoreVal !== null ? fmt(scoreVal) : 'Chưa nhập';
+      const colorStyle = scoreVal !== null ? 'color: var(--neon-cyan); font-weight:700;' : 'color: var(--text-muted);';
+      return `
+        <div class="combo-detail-row">
+          <span>${s}</span>
+          <span style="${colorStyle}">${scoreStr}</span>
+        </div>
+      `;
+    }).join('');
+
+    const statusBadge = r.complete
+      ? `<div class="status-badge complete">Đủ 3 môn</div>`
+      : `<div class="status-badge missing">Thiếu môn</div>`;
+
+    const totalText = r.complete
+      ? `<div class="score" style="font-size: 20px;">${fmt(r.total)}</div>`
+      : `<span style="color: var(--text-muted); font-size:13px; font-style:italic;">Chưa đủ dữ liệu</span>`;
+
+    const glowClass = r.complete ? 'border-color: rgba(16, 185, 129, 0.3); box-shadow: 0 4px 15px rgba(16, 185, 129, 0.05);' : '';
+
+    return `
+      <div class="field" style="margin-bottom: 12px; background: rgba(255,255,255,0.015); display: flex; flex-direction: column; gap:10px; ${glowClass}">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge pink" style="font-size: 14px; padding: 4px 10px;">${r.code}</span>
+            ${statusBadge}
+          </div>
+          <div>
+            ${totalText}
+          </div>
+        </div>
+        <div class="combo-detail-grid" style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 8px;">
+          ${detailRows}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 16px;">
+      ${cardsHtml}
+    </div>
+  `;
+}
+
+/* ===================== REFERENCE TABLE ===================== */
+function buildSubjectSelect() {
+  const sel = document.getElementById('tableSubjectSelect');
+  sel.innerHTML = SUBJECT_LIST.map(s => `<option value="${s}">${s}</option>`).join('');
+  sel.value = "Toán";
+}
+
+function renderReferenceTable() {
+  const subj = document.getElementById('tableSubjectSelect').value;
+  const table = SUBJECT_TABLES[subj];
+  const container = document.getElementById('referenceTable');
+  const rowsDesc = [...table].reverse();
+  
+  const rows = rowsDesc.map(r => {
+    const range = r.a === 0 ? `x ≤ ${fmt(r.b)}` : `${fmt(r.a)} < x ≤ ${fmt(r.b)}`;
+    const yrange = (r.c === r.d) ? `y = ${fmt(r.c)}` : `${fmt(r.c)} < y ≤ ${fmt(r.d)}`;
+    return `
+      <tr>
+        <td style="font-family: 'JetBrains Mono', monospace; font-weight:500;">${range}</td>
+        <td style="font-family: 'JetBrains Mono', monospace; font-weight:700; color: var(--neon-cyan);">${yrange}</td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Khoảng điểm Học bạ (x)</th>
+            <th>Khoảng điểm thi THPT tương ứng (y)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ===================== TAB CONTROLLER ===================== */
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-content').forEach(content => {
+    content.classList.remove('active');
+  });
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+
+  const targetTab = document.getElementById(tabId);
+  if (targetTab) targetTab.classList.add('active');
+
+  const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => {
+    return btn.getAttribute('onclick').includes(tabId);
+  });
+  if (activeBtn) activeBtn.classList.add('active');
+}
+
+/* ===================== INITIALIZE ===================== */
+buildInputs();
+buildSubjectSelect();
+renderReferenceTable();
+autoCalculate();
+</script>
+
+</body>
+</html>
