@@ -124,10 +124,114 @@
   .empty{padding:30px;text-align:center;color:var(--muted);font-size:14px;}
   .scale-table{margin-top:10px;}
   .scale-table table{margin-top:8px;}
-  @media (max-width:600px){
-    body{padding:14px;}
-    header{padding:18px;}
-    table{font-size:12px;}
+  @media (max-width: 768px) {
+    body {
+      padding: 12px 8px;
+    }
+    .wrap {
+      gap: 16px;
+    }
+    header {
+      padding: 20px 16px;
+    }
+    header h1 {
+      font-size: 20px;
+    }
+    header p {
+      font-size: 12.5px;
+    }
+    .card {
+      padding: 16px;
+      border-radius: 12px;
+    }
+    .card h2 {
+      font-size: 15px;
+      margin-bottom: 12px;
+    }
+    
+    /* Table cards transformation on mobile */
+    table, thead, tbody, th, td, tr {
+      display: block;
+    }
+    thead {
+      display: none;
+    }
+    tr {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    td {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      text-align: right;
+    }
+    td:last-child {
+      border-bottom: none;
+    }
+    td::before {
+      content: attr(data-label);
+      font-weight: 700;
+      color: var(--primary-dark);
+      font-size: 12px;
+      text-transform: uppercase;
+      text-align: left;
+      margin-right: 12px;
+    }
+    td input[type=number] {
+      max-width: 140px;
+      text-align: right;
+      padding: 6px 10px;
+      font-size: 16px; /* Prevent auto-zoom */
+    }
+    .readonly {
+      background: transparent !important;
+      padding-right: 0;
+    }
+    .grade-cell {
+      padding-right: 0;
+    }
+    td:first-child {
+      border-bottom: 1px solid var(--primary);
+      padding-bottom: 10px;
+      margin-bottom: 6px;
+      color: var(--primary);
+      font-weight: bold;
+    }
+    td:first-child::before {
+      color: var(--primary);
+    }
+    
+    /* Scale reference table: keep horizontal layout but make it compact */
+    .scale-table table {
+      display: table;
+    }
+    .scale-table thead {
+      display: table-header-group;
+    }
+    .scale-table tr {
+      display: table-row;
+      background: transparent;
+      border: none;
+      padding: 0;
+      margin-bottom: 0;
+      box-shadow: none;
+    }
+    .scale-table td, .scale-table th {
+      display: table-cell;
+      text-align: center;
+      padding: 10px 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .scale-table td::before {
+      display: none;
+    }
   }
 </style>
 </head>
@@ -300,16 +404,16 @@ function buildTable(){
   for(let i = 1; i <= n; i++){
     rows += `
       <tr id="row_${i}">
-        <td>${i}</td>
-        <td><input type="number" id="credit_${i}" min="0" step="0.5" placeholder="TC" oninput="calculateGPA()"></td>
-        <td><input type="number" id="gk_${i}" min="0" max="10" step="0.1" placeholder="0-10" oninput="updateCKNeed(${i}); calculateGPA()"></td>
-        <td><input type="number" id="ck_${i}" min="0" max="10" step="0.1" placeholder="0-10" oninput="calculateGPA()"></td>
-        <td><input type="number" id="wgk_${i}" min="0" max="100" step="1" placeholder="40" oninput="updateCK(${i}); updateCKNeed(${i}); calculateGPA()"></td>
-        <td class="readonly" id="wck_${i}">60</td>
-        <td class="readonly" id="ckneed_${i}">–</td>
-        <td class="readonly" id="tb_${i}">–</td>
-        <td class="grade-cell" id="grade_${i}">–</td>
-        <td class="readonly" id="point4_${i}">–</td>
+        <td data-label="STT">${i}</td>
+        <td data-label="Số tín chỉ"><input type="number" id="credit_${i}" min="0" step="0.5" placeholder="TC" oninput="calculateGPA()"></td>
+        <td data-label="Điểm GK"><input type="number" id="gk_${i}" min="0" max="10" step="0.1" placeholder="0-10" oninput="updateCKNeed(${i}); calculateGPA()"></td>
+        <td data-label="Điểm CK"><input type="number" id="ck_${i}" min="0" max="10" step="0.1" placeholder="0-10" oninput="calculateGPA()"></td>
+        <td data-label="%GK"><input type="number" id="wgk_${i}" min="0" max="100" step="1" placeholder="40" oninput="updateCK(${i}); updateCKNeed(${i}); calculateGPA()"></td>
+        <td data-label="%CK" class="readonly" id="wck_${i}">60</td>
+        <td data-label="CK tối thiểu để qua" class="readonly" id="ckneed_${i}">–</td>
+        <td data-label="Điểm TB môn" class="readonly" id="tb_${i}">–</td>
+        <td data-label="Điểm chữ" class="grade-cell" id="grade_${i}">–</td>
+        <td data-label="Điểm hệ 4" class="readonly" id="point4_${i}">–</td>
       </tr>
     `;
   }

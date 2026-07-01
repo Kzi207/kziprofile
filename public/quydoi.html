@@ -185,11 +185,7 @@
     gap: 16px;
   }
 
-  @media (max-width: 480px) {
-    .subjects-grid {
-      grid-template-columns: 1fr;
-    }
-  }
+  /* Handled in mobile media queries */
 
   .field {
     display: flex;
@@ -291,6 +287,15 @@
     margin-bottom: 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     padding-bottom: 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .tab-btn {
+    flex-shrink: 0;
   }
 
   .tab-btn {
@@ -727,6 +732,84 @@
   @keyframes borderGlow {
     from { box-shadow: 0 0 10px rgba(245, 158, 11, 0.1); }
     to { box-shadow: 0 0 20px rgba(245, 158, 11, 0.25); }
+  }
+
+  @media (max-width: 768px) {
+    body {
+      padding: 16px 8px;
+    }
+    .wrap {
+      gap: 16px;
+    }
+    header {
+      padding: 20px 16px;
+    }
+    header h1 {
+      font-size: 20px;
+    }
+    header p {
+      font-size: 13px;
+    }
+    .card {
+      padding: 16px;
+      border-radius: 12px;
+    }
+    .card h2 {
+      font-size: 15px;
+      margin-bottom: 14px;
+    }
+    .actions {
+      gap: 8px;
+    }
+    button {
+      padding: 10px 16px;
+      font-size: 13px;
+      width: 100%;
+      justify-content: center;
+    }
+    .subjects-grid {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .field {
+      padding: 10px;
+    }
+    .field input {
+      font-size: 16px; /* Prevent browser auto-zoom */
+    }
+    .combo-filters {
+      overflow-x: auto;
+      white-space: nowrap;
+      padding-bottom: 6px;
+      width: 100%;
+      -webkit-overflow-scrolling: touch;
+    }
+    .combo-filters::-webkit-scrollbar {
+      display: none;
+    }
+    .filter-pill {
+      flex-shrink: 0;
+    }
+    .interpolation-widget {
+      padding: 10px;
+    }
+    .visual-marker::after {
+      font-size: 10px;
+      bottom: 14px;
+    }
+    /* Make tables responsive */
+    table {
+      display: block;
+      width: 100%;
+      overflow-x: auto;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    .warning-banner {
+      padding: 12px;
+      font-size: 13px;
+      gap: 8px;
+    }
   }
 </style>
 </head>

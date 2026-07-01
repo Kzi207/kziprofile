@@ -118,9 +118,26 @@
     color:var(--muted);
     margin-top:6px;
   }
-  @media (max-width:600px){
-    body{padding:14px;}
-    header{padding:18px;}
+  @media (max-width: 768px) {
+    body { padding: 12px 8px; }
+    header { padding: 20px 16px; }
+    header h1 { font-size: 20px; }
+    header p { font-size: 13px; }
+    .card { padding: 16px; border-radius: 12px; }
+    .subjects-grid { grid-template-columns: 1fr; }
+    .field input { font-size: 16px; } /* Prevent auto-zoom on mobile */
+    table {
+      display: block;
+      width: 100%;
+      overflow-x: auto;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+    }
+    .warning-banner {
+      padding: 12px;
+      font-size: 13px;
+      gap: 8px;
+    }
   }
   .warning-banner {
     background: #fffbeb;
