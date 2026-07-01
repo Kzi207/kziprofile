@@ -696,20 +696,57 @@
     transform: translateY(-50%);
     pointer-events: none;
   }
+
+  /* Warning Banner style */
+  .warning-banner {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    color: #f59e0b;
+    padding: 16px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+    margin-bottom: 8px;
+    border-left: 5px solid var(--neon-yellow);
+    animation: borderGlow 2s infinite alternate;
+  }
+  .warning-banner svg {
+    flex-shrink: 0;
+    color: var(--neon-yellow);
+    animation: flash 1.5s infinite alternate;
+  }
+  @keyframes flash {
+    from { opacity: 0.5; filter: drop-shadow(0 0 2px var(--neon-yellow)); }
+    to { opacity: 1; filter: drop-shadow(0 0 8px var(--neon-yellow)); }
+  }
+  @keyframes borderGlow {
+    from { box-shadow: 0 0 10px rgba(245, 158, 11, 0.1); }
+    to { box-shadow: 0 0 20px rgba(245, 158, 11, 0.25); }
+  }
 </style>
 </head>
 <body>
 
 <div class="wrap">
+  <!-- Warning Banner -->
+  <div class="warning-banner">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+    <span><strong>KHUYẾN CÁO:</strong> Đây chỉ là công cụ tính toán tham khảo. Kết quả quy đổi có thể không hoàn toàn chính xác so với kết quả chính thức từ Hội đồng Tuyển sinh Trường</span>
+  </div>
+
   <!-- Header -->
   <header>
     <div class="header-content">
-      <div class="header-badge">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
-        Đại học Cần Thơ (CTU)
-      </div>
       <h1>Quy đổi điểm Học bạ → Điểm thi THPT 2025</h1>
-      <p>Công cụ quy đổi điểm chính thức theo Thông báo tuyển sinh số 2939/TB-ĐHCT-ĐT ngày 13/8/2025 của Trường Đại học Cần Thơ. Điểm học bạ trung bình của 3 năm lớp 10, 11 và 12 (Phương thức xét tuyển 3) của từng môn sẽ được nội suy tuyến tính sang thang điểm thi tốt nghiệp THPT 2025 tương ứng.</p>
     </div>
   </header>
 
