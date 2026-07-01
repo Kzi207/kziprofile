@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quy đổi điểm Học bạ sang điểm thi THPT 2025 - ĐHCT</title>
+<style>
+  :root{
+    --primary:#0b5fa5;
+    --primary-dark:#08406f;
+    --bg:#f4f7fb;
+    --card:#ffffff;
+    --border:#dbe4ee;
+    --text:#1c2b3a;
+    --muted:#6b7d8f;
+    --accent:#e8f1fb;
+    --good:#1c8a4c;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    padding:24px;
+  }
+  .wrap{max-width:1100px;margin:0 auto;}
+  header{
+    background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+    color:#fff;
+    padding:24px 28px;
+    border-radius:14px;
+    margin-bottom:20px;
+  }
+  header h1{margin:0 0 6px;font-size:22px;}
+  header p{margin:0;opacity:.9;font-size:14px;}
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:20px 24px;
+    margin-bottom:20px;
+    box-shadow:0 1px 3px rgba(20,40,70,.04);
+  }
+  .card h2{
+    font-size:16px;
+    margin:0 0 14px;
+    color:var(--primary-dark);
+    display:flex;align-items:center;gap:8px;
+  }
+  .subjects-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+    gap:14px;
+  }
+  .field{
+    display:flex;flex-direction:column;gap:6px;
+  }
+  .field label{font-size:13px;font-weight:600;color:var(--text);}
+  .field input{
+    padding:9px 10px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    font-size:14px;
+    outline:none;
+    transition:border .15s;
+  }
+  .field input:focus{border-color:var(--primary);}
+  .actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;}
+  button{
+    background:var(--primary);
+    color:#fff;
+    border:none;
+    padding:11px 22px;
+    border-radius:8px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    transition:background .15s;
+  }
+  button:hover{background:var(--primary-dark);}
+  button.secondary{
+    background:#fff;
+    color:var(--primary-dark);
+    border:1px solid var(--border);
+  }
+  button.secondary:hover{background:var(--accent);}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--border);}
+  th{background:var(--accent);color:var(--primary-dark);font-weight:700;}
+  tr:hover td{background:#fafcff;}
+  .score{font-weight:700;color:var(--good);}
+  .badge{
+    display:inline-block;
+    background:var(--accent);
+    color:var(--primary-dark);
+    padding:2px 8px;
+    border-radius:6px;
+    font-weight:700;
+    font-size:12.5px;
+  }
+  .muted{color:var(--muted);font-size:12.5px;}
+  .empty{
+    padding:30px;text-align:center;color:var(--muted);font-size:14px;
+  }
+  .search{
+    margin-bottom:12px;
+  }
+  .search input{
+    width:100%;
+    padding:9px 12px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    font-size:14px;
+  }
+  .footer-note{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:6px;
+  }
+  @media (max-width:600px){
+    body{padding:14px;}
+    header{padding:18px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>🎓 Quy đổi điểm Học bạ → điểm thi THPT 2025</h1>
+    <p>Theo Thông báo số 2939/TB-ĐHCT-ĐT ngày 13/8/2025 — Trường Đại học Cần Thơ. Nhập điểm trung bình 3 năm (Phương thức 3) cho từng môn để xem điểm quy đổi và tổng điểm theo tổ hợp xét tuyển.</p>
+  </header>
+
+  <div class="card">
+    <h2>📥 Nhập điểm Học bạ (thang điểm 10)</h2>
+    <div class="subjects-grid" id="subjectInputs"></div>
+    <div class="actions">
+      <button onclick="calculateAll()">Tính điểm quy đổi</button>
+      <button class="secondary" onclick="fillDemo()">Điền dữ liệu mẫu</button>
+      <button class="secondary" onclick="clearAll()">Xóa hết</button>
+    </div>
+    <p class="footer-note">Công thức nội suy: y = c + (x − a)/(b − a) × (d − c), làm tròn 2 chữ số thập phân.</p>
+  </div>
+
+  <div class="card">
+    <h2>📊 Điểm quy đổi theo từng môn (kèm công thức nội suy)</h2>
+    <div id="subjectResults"><div class="empty">Nhập điểm và bấm "Tính điểm quy đổi" để xem kết quả</div></div>
+  </div>
+
+  <div class="card">
+    <h2>📖 Bảng quy đổi gốc &amp; công thức nội suy (Phụ lục kèm TB 2939/TB-ĐHCT-ĐT)</h2>
+    <p class="muted">
+      Công thức: <b>y = c + (x − a)/(b − a) × (d − c)</b>, làm tròn 2 chữ số thập phân.<br>
+      Trong đó: x là điểm Học bạ; a, b là hai điểm mốc xác định khoảng điểm Học bạ (a &lt; x ≤ b); y là điểm quy đổi; c, d là hai điểm mốc điểm THPT tương ứng (c &lt; y ≤ d).
+    </p>
+    <div class="search">
+      <select id="tableSubjectSelect" onchange="renderReferenceTable()" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;"></select>
+    </div>
+    <div id="referenceTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>🧮 Điểm quy đổi theo tổ hợp xét tuyển</h2>
+    <div class="search">
+      <input type="text" id="comboSearch" placeholder="Tìm theo mã tổ hợp (VD: A00, D01...) hoặc tên môn..." oninput="renderCombos()">
+    </div>
+    <div id="comboResults"><div class="empty">Nhập đủ điểm 3 môn của một tổ hợp để xem kết quả</div></div>
+  </div>
+
+</div>
+
+<script>
+/* ===================== DỮ LIỆU QUY ĐỔI (Phụ lục TB 2939/TB-ĐHCT-ĐT) ===================== */
+/* Mỗi môn: mảng các khoảng {a,b,c,d} nội suy y = c + (x-a)/(b-a)*(d-c) */
+
+const SUBJECT_TABLES = {
+  "Toán": [
+    {a:0,    b:3.43,  c:0,    d:1.05},
+    {a:3.43, b:6.00,  c:1.05, d:3.25},
+    {a:6.00, b:6.57,  c:3.25, d:3.85},
+    {a:6.57, b:7.03,  c:3.85, d:4.25},
+    {a:7.03, b:7.40,  c:4.25, d:4.60},
+    {a:7.40, b:7.77,  c:4.60, d:5.00},
+    {a:7.77, b:8.13,  c:5.00, d:5.25},
+    {a:8.13, b:8.47,  c:5.25, d:5.75},
+    {a:8.47, b:8.83,  c:5.75, d:6.25},
+    {a:8.83, b:9.20,  c:6.25, d:7.00},
+    {a:9.20, b:9.47,  c:7.00, d:7.50},
+    {a:9.47, b:9.60,  c:7.50, d:8.00},
+    {a:9.60, b:10.00, c:8.00, d:10.00}
+  ],
+  "Vật lí": [
+    {a:0,    b:2.00,  c:0,    d:1.85},
+    {a:2.00, b:6.83,  c:1.85, d:5.25},
+    {a:6.83, b:7.37,  c:5.25, d:5.85},
+    {a:7.37, b:7.77,  c:5.85, d:6.35},
+    {a:7.77, b:8.10,  c:6.35, d:6.75},
+    {a:8.10, b:8.37,  c:6.75, d:7.10},
+    {a:8.37, b:8.63,  c:7.10, d:7.50},
+    {a:8.63, b:8.87,  c:7.50, d:7.75},
+    {a:8.87, b:9.13,  c:7.75, d:8.25},
+    {a:9.13, b:9.40,  c:8.25, d:8.75},
+    {a:9.40, b:9.60,  c:8.75, d:9.25},
+    {a:9.60, b:9.70,  c:9.25, d:9.50},
+    {a:9.70, b:10.00, c:9.50, d:10.00}
+  ],
+  "Hóa học": [
+    {a:0,    b:2.43,  c:0,    d:1.25},
+    {a:2.43, b:6.93,  c:1.25, d:4.00},
+    {a:6.93, b:7.47,  c:4.00, d:4.60},
+    {a:7.47, b:7.83,  c:4.60, d:5.10},
+    {a:7.83, b:8.17,  c:5.10, d:5.50},
+    {a:8.17, b:8.43,  c:5.50, d:6.00},
+    {a:8.43, b:8.70,  c:6.00, d:6.50},
+    {a:8.70, b:8.93,  c:6.50, d:7.00},
+    {a:8.93, b:9.17,  c:7.00, d:7.75},
+    {a:9.17, b:9.43,  c:7.75, d:8.50},
+    {a:9.43, b:9.60,  c:8.50, d:8.75},
+    {a:9.60, b:9.70,  c:8.75, d:9.00},
+    {a:9.70, b:10.00, c:9.00, d:10.00}
+  ],
+  "Sinh học": [
+    {a:0,    b:2.47,  c:0,    d:1.85},
+    {a:2.47, b:7.23,  c:1.85, d:4.35},
+    {a:7.23, b:7.73,  c:4.35, d:4.95},
+    {a:7.73, b:8.07,  c:4.95, d:5.35},
+    {a:8.07, b:8.33,  c:5.35, d:5.75},
+    {a:8.33, b:8.54,  c:5.75, d:6.10},
+    {a:8.54, b:8.77,  c:6.10, d:6.50},
+    {a:8.77, b:9.00,  c:6.50, d:6.75},
+    {a:9.00, b:9.20,  c:6.75, d:7.25},
+    {a:9.20, b:9.43,  c:7.25, d:7.75},
+    {a:9.43, b:9.60,  c:7.75, d:8.25},
+    {a:9.60, b:9.67,  c:8.25, d:8.50},
+    {a:9.67, b:10.00, c:8.50, d:10.00}
+  ],
+  "Lịch sử": [
+    {a:0,    b:5.10,  c:0,    d:2.00},
+    {a:5.10, b:6.97,  c:2.00, d:5.35},
+    {a:6.97, b:7.40,  c:5.35, d:6.10},
+    {a:7.40, b:7.73,  c:6.10, d:6.75},
+    {a:7.73, b:8.00,  c:6.75, d:7.10},
+    {a:8.00, b:8.23,  c:7.10, d:7.50},
+    {a:8.23, b:8.50,  c:7.50, d:7.85},
+    {a:8.50, b:8.70,  c:7.85, d:8.25},
+    {a:8.70, b:8.93,  c:8.25, d:8.50},
+    {a:8.93, b:9.23,  c:8.50, d:9.00},
+    {a:9.23, b:9.43,  c:9.00, d:9.25},
+    {a:9.43, b:9.53,  c:9.25, d:9.50},
+    {a:9.53, b:10.00, c:9.50, d:10.00}
+  ],
+  "Địa lí": [
+    {a:0,    b:2.37,  c:0,    d:1.85},
+    {a:2.37, b:6.73,  c:1.85, d:5.50},
+    {a:6.73, b:7.17,  c:5.50, d:6.25},
+    {a:7.17, b:7.50,  c:6.25, d:6.75},
+    {a:7.50, b:7.80,  c:6.75, d:7.25},
+    {a:7.80, b:8.07,  c:7.25, d:7.75},
+    {a:8.07, b:8.30,  c:7.75, d:8.25},
+    {a:8.30, b:8.57,  c:8.25, d:8.50},
+    {a:8.57, b:8.83,  c:8.50, d:9.00},
+    {a:8.83, b:9.13,  c:9.00, d:9.50},
+    {a:9.13, b:9.37,  c:9.50, d:9.75},
+    {a:9.37, b:9.50,  c:9.75, d:10.00},
+    {a:9.50, b:10.00, c:10.00,d:10.00}
+  ],
+  "Tiếng Anh": [
+    {a:0,    b:1.93,  c:0,    d:1.25},
+    {a:1.93, b:6.63,  c:1.25, d:3.50},
+    {a:6.63, b:7.17,  c:3.50, d:4.00},
+    {a:7.17, b:7.57,  c:4.00, d:4.50},
+    {a:7.57, b:7.90,  c:4.50, d:4.75},
+    {a:7.90, b:8.20,  c:4.75, d:5.00},
+    {a:8.20, b:8.47,  c:5.00, d:5.50},
+    {a:8.47, b:8.70,  c:5.50, d:5.75},
+    {a:8.70, b:8.97,  c:5.75, d:6.25},
+    {a:8.97, b:9.27,  c:6.25, d:6.75},
+    {a:9.27, b:9.47,  c:6.75, d:7.50},
+    {a:9.47, b:9.57,  c:7.50, d:7.75},
+    {a:9.57, b:9.97,  c:7.75, d:10.00}
+  ],
+  "Ngữ văn": [
+    {a:0,    b:3.80,  c:0,    d:2.25},
+    {a:3.80, b:6.43,  c:2.25, d:6.00},
+    {a:6.43, b:6.87,  c:6.00, d:6.50},
+    {a:6.87, b:7.17,  c:6.50, d:7.00},
+    {a:7.17, b:7.43,  c:7.00, d:7.25},
+    {a:7.43, b:7.67,  c:7.25, d:7.50},
+    {a:7.67, b:7.90,  c:7.50, d:7.75},
+    {a:7.90, b:8.10,  c:7.75, d:8.00},
+    {a:8.10, b:8.37,  c:8.00, d:8.25},
+    {a:8.37, b:8.67,  c:8.25, d:8.50},
+    {a:8.67, b:8.90,  c:8.50, d:8.75},
+    {a:8.90, b:9.03,  c:8.75, d:9.00},
+    {a:9.03, b:9.93,  c:9.00, d:9.75}
+  ],
+  "Tin học": [
+    {a:0,    b:3.03,  c:0,    d:2.75},
+    {a:3.03, b:7.21,  c:2.75, d:5.35},
+    {a:7.21, b:7.70,  c:5.35, d:6.10},
+    {a:7.70, b:7.97,  c:6.10, d:6.60},
+    {a:7.97, b:8.27,  c:6.60, d:7.00},
+    {a:8.27, b:8.50,  c:7.00, d:7.25},
+    {a:8.50, b:8.67,  c:7.25, d:7.75},
+    {a:8.67, b:8.90,  c:7.75, d:8.00},
+    {a:8.90, b:9.10,  c:8.00, d:8.25},
+    {a:9.10, b:9.40,  c:8.25, d:9.00},
+    {a:9.40, b:9.57,  c:9.00, d:9.25},
+    {a:9.57, b:9.67,  c:9.25, d:9.61},
+    {a:9.67, b:10.00, c:9.61, d:10.00}
+  ],
+  "Công nghệ công nghiệp": [
+    {a:0,    b:3.20,  c:0,    d:3.60},
+    {a:3.20, b:6.67,  c:3.60, d:4.63},
+    {a:6.67, b:7.43,  c:4.63, d:5.50},
+    {a:7.43, b:7.66,  c:5.50, d:6.10},
+    {a:7.66, b:7.98,  c:6.10, d:6.25},
+    {a:7.98, b:8.17,  c:6.25, d:6.50},
+    {a:8.17, b:8.33,  c:6.50, d:7.10},
+    {a:8.33, b:8.43,  c:7.10, d:7.91},
+    {a:8.43, b:8.67,  c:7.91, d:8.25},
+    {a:8.67, b:9.05,  c:8.25, d:8.95},
+    {a:9.05, b:9.13,  c:8.95, d:9.50},
+    {a:9.13, b:9.27,  c:9.50, d:10.00},
+    {a:9.27, b:10.00, c:10.00,d:10.00}
+  ],
+  "GDKT&PL": [
+    {a:0,    b:2.23,  c:0,    d:3.60},
+    {a:2.23, b:7.10,  c:3.60, d:6.75},
+    {a:7.10, b:7.50,  c:6.75, d:7.25},
+    {a:7.50, b:7.80,  c:7.25, d:7.75},
+    {a:7.80, b:8.03,  c:7.75, d:8.00},
+    {a:8.03, b:8.23,  c:8.00, d:8.25},
+    {a:8.23, b:8.47,  c:8.25, d:8.50},
+    {a:8.47, b:8.67,  c:8.50, d:8.75},
+    {a:8.67, b:8.90,  c:8.75, d:9.00},
+    {a:8.90, b:9.20,  c:9.00, d:9.25},
+    {a:9.20, b:9.40,  c:9.25, d:9.50},
+    {a:9.40, b:9.53,  c:9.50, d:9.75},
+    {a:9.53, b:10.00, c:9.75, d:10.00}
+  ]
+};
+
+/* ===================== TỔ HỢP XÉT TUYỂN ===================== */
+const COMBOS = {
+  "A00":["Toán","Vật lí","Hóa học"],
+  "A01":["Toán","Vật lí","Tiếng Anh"],
+  "A02":["Toán","Vật lí","Sinh học"],
+  "A03":["Toán","Vật lí","Lịch sử"],
+  "A04":["Toán","Vật lí","Địa lí"],
+  "B00":["Toán","Hóa học","Sinh học"],
+  "B03":["Toán","Sinh học","Ngữ văn"],
+  "B08":["Toán","Sinh học","Tiếng Anh"],
+  "C00":["Ngữ văn","Lịch sử","Địa lí"],
+  "C01":["Toán","Ngữ văn","Vật lí"],
+  "C02":["Toán","Ngữ văn","Hóa học"],
+  "C03":["Ngữ văn","Toán","Lịch sử"],
+  "C05":["Ngữ văn","Vật lí","Hóa học"],
+  "C08":["Ngữ văn","Hóa học","Sinh học"],
+  "D01":["Toán","Ngữ văn","Tiếng Anh"],
+  "D07":["Toán","Hóa học","Tiếng Anh"],
+  "D09":["Toán","Lịch sử","Tiếng Anh"],
+  "D10":["Toán","Địa lí","Tiếng Anh"],
+  "D11":["Ngữ văn","Vật lí","Tiếng Anh"],
+  "D12":["Ngữ văn","Hóa học","Tiếng Anh"],
+  "D13":["Ngữ văn","Sinh học","Tiếng Anh"],
+  "D14":["Ngữ văn","Lịch sử","Tiếng Anh"],
+  "D15":["Ngữ văn","Địa lí","Tiếng Anh"],
+  "X01":["Toán","Ngữ văn","GDKT&PL"],
+  "X02":["Toán","Ngữ văn","Tin học"],
+  "X05":["Toán","Vật lí","GDKT&PL"],
+  "X06":["Toán","Vật lí","Tin học"],
+  "X07":["Toán","Vật lí","Công nghệ công nghiệp"],
+  "X10":["Toán","Hóa học","Tin học"],
+  "X11":["Toán","Hóa học","Công nghệ công nghiệp"],
+  "X13":["Toán","Sinh học","GDKT&PL"],
+  "X14":["Toán","Sinh học","Tin học"],
+  "X16":["Toán","Sinh học","Công nghệ công nghiệp"],
+  "X25":["Toán","Tiếng Anh","GDKT&PL"],
+  "X26":["Toán","Tin học","Tiếng Anh"],
+  "X27":["Toán","Tiếng Anh","Công nghệ công nghiệp"],
+  "X59":["Ngữ văn","Vật lí","Tin học"],
+  "X70":["Ngữ văn","Lịch sử","GDKT&PL"],
+  "X74":["Ngữ văn","Địa lí","GDKT&PL"],
+  "X78":["Ngữ văn","Tiếng Anh","GDKT&PL"]
+};
+
+const SUBJECT_LIST = Object.keys(SUBJECT_TABLES);
+
+/* ===================== LOGIC QUY ĐỔI ===================== */
+/* Trả về đối tượng {y, row} để có thể hiển thị công thức đã thay số */
+function convertScoreDetailed(subject, x){
+  if(x === null || x === undefined || isNaN(x)) return null;
+  x = Math.max(0, Math.min(10, x));
+  const table = SUBJECT_TABLES[subject];
+  let row = null;
+  for(const r of table){
+    if(x > r.a - 1e-9 && x <= r.b + 1e-9){ row = r; break; }
+  }
+  if(!row && x <= 0) row = table[0];
+  if(!row) return null;
+
+  let y;
+  if(row.b === row.a){
+    y = row.c;
+  } else {
+    y = row.c + (x - row.a)/(row.b - row.a) * (row.d - row.c);
+  }
+  y = Math.round(y*100)/100;
+  return {x, y, a:row.a, b:row.b, c:row.c, d:row.d};
+}
+
+function convertScore(subject, x){
+  const r = convertScoreDetailed(subject, x);
+  return r ? r.y : null;
+}
+
+let lastResults = {}; // subject -> {x,y}
+
+/* ===================== RENDER INPUTS ===================== */
+function buildInputs(){
+  const grid = document.getElementById('subjectInputs');
+  grid.innerHTML = SUBJECT_LIST.map(subj => `
+    <div class="field">
+      <label for="inp_${subj}">${subj}</label>
+      <input type="number" id="inp_${subj}" min="0" max="10" step="0.01" placeholder="VD: 8.25">
+    </div>
+  `).join('');
+}
+
+function fillDemo(){
+  const demo = {"Toán":8.25,"Vật lí":8.10,"Hóa học":7.80,"Ngữ văn":8.25,"Tiếng Anh":7.90,"Sinh học":8.00,"Lịch sử":8.40,"Địa lí":8.20,"Tin học":8.30,"Công nghệ công nghiệp":8.00,"GDKT&PL":8.10};
+  SUBJECT_LIST.forEach(s=>{
+    const el = document.getElementById('inp_'+s);
+    if(demo[s]!==undefined) el.value = demo[s];
+  });
+  calculateAll();
+}
+
+function clearAll(){
+  SUBJECT_LIST.forEach(s=>{ document.getElementById('inp_'+s).value=''; });
+  lastResults = {};
+  document.getElementById('subjectResults').innerHTML = '<div class="empty">Nhập điểm và bấm "Tính điểm quy đổi" để xem kết quả</div>';
+  document.getElementById('comboResults').innerHTML = '<div class="empty">Nhập đủ điểm 3 môn của một tổ hợp để xem kết quả</div>';
+}
+
+/* ===================== TÍNH TOÁN & HIỂN THỊ ===================== */
+function calculateAll(){
+  lastResults = {};
+  SUBJECT_LIST.forEach(subj=>{
+    const raw = document.getElementById('inp_'+subj).value;
+    if(raw === '' || raw === null) return;
+    const x = parseFloat(raw);
+    if(isNaN(x)) return;
+    const detail = convertScoreDetailed(subj, x);
+    if(detail) lastResults[subj] = detail;
+  });
+  renderSubjectResults();
+  renderCombos();
+}
+
+function fmt(n){ return n.toFixed(2).replace('.', ','); }
+
+function renderSubjectResults(){
+  const container = document.getElementById('subjectResults');
+  const entries = Object.entries(lastResults);
+  if(entries.length === 0){
+    container.innerHTML = '<div class="empty">Chưa có môn nào được nhập</div>';
+    return;
+  }
+  let rows = entries.map(([subj, d])=>{
+    const formula = (d.b === d.a)
+      ? `y = c = ${fmt(d.c)} (khoảng không đổi)`
+      : `y = ${fmt(d.c)} + (${fmt(d.x)} − ${fmt(d.a)}) / (${fmt(d.b)} − ${fmt(d.a)}) × (${fmt(d.d)} − ${fmt(d.c)}) = <b>${fmt(d.y)}</b>`;
+    return `
+    <tr>
+      <td>${subj}</td>
+      <td>${fmt(d.x)}</td>
+      <td class="muted" style="font-family:monospace;font-size:12.5px;">a=${fmt(d.a)}, b=${fmt(d.b)}, c=${fmt(d.c)}, d=${fmt(d.d)}</td>
+      <td style="font-size:12.5px;">${formula}</td>
+      <td class="score">${fmt(d.y)}</td>
+    </tr>
+  `;}).join('');
+  container.innerHTML = `
+    <table>
+      <thead><tr><th>Môn</th><th>Điểm Học bạ (x)</th><th>Mốc a,b,c,d</th><th>Công thức áp dụng</th><th>Điểm quy đổi (y)</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+/* ===================== BẢNG QUY ĐỔI GỐC (tham chiếu) ===================== */
+function buildSubjectSelect(){
+  const sel = document.getElementById('tableSubjectSelect');
+  sel.innerHTML = SUBJECT_LIST.map(s=>`<option value="${s}">${s}</option>`).join('');
+  sel.value = "Toán";
+}
+
+function renderReferenceTable(){
+  const subj = document.getElementById('tableSubjectSelect').value;
+  const table = SUBJECT_TABLES[subj];
+  const container = document.getElementById('referenceTable');
+  // Hiển thị từ mốc cao đến thấp giống văn bản gốc
+  const rowsDesc = [...table].reverse();
+  const rows = rowsDesc.map(r=>{
+    const range = r.a === 0 ? `x ≤ ${fmt(r.b)}` : `${fmt(r.a)} < x ≤ ${fmt(r.b)}`;
+    const yrange = (r.c === r.d) ? `y = ${fmt(r.c)}` : `${fmt(r.c)} < y ≤ ${fmt(r.d)}`;
+    return `<tr><td>${range}</td><td>${yrange}</td></tr>`;
+  }).join('');
+  container.innerHTML = `
+    <table>
+      <thead><tr><th>Khoảng điểm Học bạ (a &lt; x ≤ b)</th><th>Khoảng điểm THPT tương ứng (c &lt; y ≤ d)</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderCombos(){
+  const container = document.getElementById('comboResults');
+  const query = (document.getElementById('comboSearch').value || '').trim().toUpperCase();
+
+  const rows = [];
+  for(const [code, subjects] of Object.entries(COMBOS)){
+    const label = subjects.join(', ');
+    if(query && !code.includes(query) && !label.toUpperCase().includes(query)) continue;
+
+    const scores = subjects.map(s => lastResults[s] ? lastResults[s].y : null);
+    const complete = scores.every(v => v !== null);
+    const total = complete ? scores.reduce((a,b)=>a+b,0) : null;
+
+    rows.push({code, subjects, scores, complete, total});
+  }
+
+  if(rows.length === 0){
+    container.innerHTML = '<div class="empty">Không tìm thấy tổ hợp phù hợp</div>';
+    return;
+  }
+
+  // Sắp: tổ hợp đủ điểm lên trước, theo tổng điểm giảm dần; sau đó theo mã
+  rows.sort((a,b)=>{
+    if(a.complete && b.complete) return b.total - a.total;
+    if(a.complete) return -1;
+    if(b.complete) return 1;
+    return a.code.localeCompare(b.code);
+  });
+
+  const body = rows.map(r=>{
+    const detail = r.subjects.map((s,i)=> `${s}: ${r.scores[i]!==null ? r.scores[i].toFixed(2) : '<span class="muted">—</span>'}`).join(' + ');
+    return `
+      <tr>
+        <td><span class="badge">${r.code}</span></td>
+        <td>${detail}</td>
+        <td>${r.complete ? `<span class="score">${r.total.toFixed(2)}</span>` : '<span class="muted">Thiếu điểm môn</span>'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <table>
+      <thead><tr><th>Tổ hợp</th><th>Chi tiết điểm quy đổi</th><th>Tổng điểm</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+}
+
+buildInputs();
+buildSubjectSelect();
+renderReferenceTable();
+</script>
+</body>
+</html>
