@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cờ Caro - Bàn cờ vô hạn</title>
+    <title>Cờ Caro</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Quicksand:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -658,14 +658,99 @@ function animWinLine() {
 // ============================================================
 // AI
 // ============================================================
-const DC = { easy: { d: 1, rnd: 0.35 }, medium: { d: 2, rnd: 0.08 }, hard: { d: 3, rnd: 0.0 } };
+const DC = { easy: { d: 1, rnd: 0.35 }, medium: { d: 3, rnd: 0.05 }, hard: { d: 4, rnd: 0.0 } };
+
+// --- Threat-space helpers (thắng ngay / chặn ngay / fork "double threat") ---
+// Kỹ thuật: minimax + alpha-beta (đã có), bổ sung threat-space search theo
+// tài liệu "Go-Moku and Threat-Space Search" (L.V. Allis): trước khi minimax,
+// luôn ưu tiên 1) nước thắng ngay lập tức, 2) nước bắt buộc phải chặn (đối
+// thủ có nước thắng ngay ở lượt sau), 3) chặn "double threat"/fork (đối thủ
+// đặt 1 quân mà tạo ra 2+ đường thắng cùng lúc, ví dụ open-three -> open-four),
+// 4) tự tạo fork cho mình nếu có thể. Sau đó mới rơi về minimax để định vị lâu dài.
+
+function findImmediateWin(player) {
+    const cands = getCands(2);
+    for (const { r, c } of cands) {
+        sc2(r, c, player);
+        const win = checkWin(r, c, player);
+        sc2(r, c, E);
+        if (win) return { r, c };
+    }
+    return null;
+}
+
+// Đếm số ô trống mà nếu "player" đặt vào sẽ thắng ngay (>=2 nghĩa là fork/double threat)
+function countWinningSpots(player) {
+    const cands = getCands(2);
+    let count = 0;
+    const spots = [];
+    for (const { r, c } of cands) {
+        sc2(r, c, player);
+        const win = checkWin(r, c, player);
+        sc2(r, c, E);
+        if (win) { count++; spots.push({ r, c }); }
+    }
+    return { count, spots };
+}
+
+// Chọn nước tốt nhất trong 1 danh sách ứng viên theo eval tĩnh (dùng để chọn
+// giữa nhiều nước chặn/fork tương đương nhau)
+function pickBestByEval(list) {
+    let best = list[0], bestScore = -Infinity;
+    for (const m of list) {
+        sc2(m.r, m.c, A);
+        const s = ev();
+        sc2(m.r, m.c, E);
+        if (s > bestScore) { bestScore = s; best = m; }
+    }
+    return best;
+}
 
 function bestMove() {
     const cfg = DC[DIFF];
     const cands = getCands(2);
     if (cands.length === 0) return { r: 0, c: 0 };
+
+    // 1) Có nước thắng ngay cho AI? Luôn ăn ngay, bất kể độ khó.
+    const win = findImmediateWin(A);
+    if (win) return win;
+
+    // 2) Đối thủ có nước thắng ngay ở lượt tới? Bắt buộc phải chặn.
+    const oppWin = countWinningSpots(H);
+    if (oppWin.count === 1) {
+        return oppWin.spots[0];
+    } else if (oppWin.count > 1) {
+        // Đối thủ đã tạo double-threat không thể chặn hết -> chặn ô tốt nhất còn lại
+        return pickBestByEval(oppWin.spots);
+    }
+
+    // Từ đây trở đi mức "dễ" giữ nguyên yếu tố ngẫu nhiên như cũ
     if (Math.random() < cfg.rnd) return cands[Math.floor(Math.random() * Math.min(5, cands.length))];
 
+    // 3) Nếu đối thủ đặt 1 quân sẽ tạo ra fork (>=2 đường thắng cùng lúc,
+    // ví dụ open-three), phải chặn ngay từ bây giờ trước khi nó xảy ra.
+    if (DIFF !== 'easy') {
+        const forkBlocks = [];
+        for (const { r, c } of cands) {
+            sc2(r, c, H);
+            const spots = countWinningSpots(H);
+            sc2(r, c, E);
+            if (spots.count >= 2) forkBlocks.push({ r, c });
+        }
+        if (forkBlocks.length > 0) return pickBestByEval(forkBlocks);
+
+        // 4) AI có thể tự tạo fork (bắt đối thủ không đỡ hết) -> ưu tiên đi luôn
+        const aiForks = [];
+        for (const { r, c } of cands) {
+            sc2(r, c, A);
+            const spots = countWinningSpots(A);
+            sc2(r, c, E);
+            if (spots.count >= 2) aiForks.push({ r, c });
+        }
+        if (aiForks.length > 0) return pickBestByEval(aiForks);
+    }
+
+    // 5) Không có tình huống bắt buộc -> minimax + alpha-beta với move-ordering
     let bs = -Infinity, bm = [];
     for (const { r, c } of cands) {
         sc2(r, c, A);
@@ -677,11 +762,47 @@ function bestMove() {
     return bm[Math.floor(Math.random() * bm.length)];
 }
 
+// Đánh giá nhanh 1 ô nếu đặt quân "player" vào đó (dùng để sắp thứ tự nước đi
+// cho alpha-beta cắt tỉa hiệu quả hơn — move ordering là cải tiến kinh điển
+// giúp alpha-beta cắt nhiều nhánh hơn khi nước tốt được xét trước).
+function lineThreat(r, c, dr, dc, player) {
+    let cnt = 1, tr = r + dr, tc = c + dc;
+    while (gc(tr, tc) === player) { cnt++; tr += dr; tc += dc; }
+    const oe1 = gc(tr, tc) === E ? 1 : 0;
+    tr = r - dr; tc = c - dc;
+    while (gc(tr, tc) === player) { cnt++; tr -= dr; tc -= dc; }
+    const oe2 = gc(tr, tc) === E ? 1 : 0;
+    return pScore(cnt, oe1 + oe2);
+}
+function moveHeuristic(r, c) {
+    const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    let s = 0;
+    sc2(r, c, A);
+    for (const [dr, dc] of dirs) s += lineThreat(r, c, dr, dc, A);
+    sc2(r, c, E);
+    sc2(r, c, H);
+    for (const [dr, dc] of dirs) s += lineThreat(r, c, dr, dc, H) * 1.05;
+    sc2(r, c, E);
+    return s;
+}
+
+// Giới hạn nhánh tìm kiếm bên trong minimax (đã sắp theo heuristic để cắt tỉa
+// tốt hơn) — kỹ thuật "restricting moves to cells near existing stones" +
+// "move ordering" là chuẩn phổ biến để depth 3-4 chạy đủ nhanh trên bàn cờ vô hạn.
+function orderedCandsForSearch(cap) {
+    const cd = getCands(1);
+    if (cd.length <= cap) return cd;
+    const scored = cd.map(m => ({ ...m, h: moveHeuristic(m.r, m.c) }));
+    scored.sort((a, b) => b.h - a.h);
+    return scored.slice(0, cap);
+}
+
 function mm(dep, al, be, isMax) {
     const t = term();
     if (t !== null) return t;
     if (dep === 0) return ev();
-    const cd = getCands(1);
+    const cap = dep >= 3 ? 8 : 12;
+    const cd = orderedCandsForSearch(cap);
     if (cd.length === 0) return ev();
     if (isMax) {
         let mx = -Infinity;
