@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   Menu, X, Terminal, Eye, User, Server, Layers, 
-  ListTodo, Calendar, Award, Mail, Settings, LogOut 
+  ListTodo, Calendar, Award, Mail, Settings, LogOut, Upload
 } from "lucide-react";
 import AudioPlayer from "./AudioPlayer";
 
@@ -105,7 +105,7 @@ export default function Header({
                 {siteTitle ? siteTitle.split("//")[0].trim() : "Kzi"}
               </span>
               <span className="text-[9px] text-cyan-400 border border-cyan-400/30 rounded bg-cyan-400/10 px-1 py-0.5 mt-0.5 self-start font-mono uppercase tracking-widest">
-                OTAKU v1.0 🤖
+                 v1.0 🤖
               </span>
             </div>
           </div>

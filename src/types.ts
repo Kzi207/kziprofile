@@ -92,3 +92,19 @@ export interface SiteSettings {
   status_active?: string;
   [key: string]: string | undefined;
 }
+
+export interface Photo {
+  id: string;
+  title: string;
+  description?: string;
+  tags: string[];
+  cloudinaryPublicId: string;
+  secureUrl: string;
+  width: number;
+  height: number;
+  format: string;
+  bytes: number;
+  createdAt: string;
+  updatedAt: string;
+}
+

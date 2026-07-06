@@ -10,9 +10,18 @@ import cors from "cors";
 import { CHILL_LINKS_DEFAULT } from "./src/data/chill_links.js";
 import { GAI_LINKS_DEFAULT } from "./src/data/gai_links.js";
 import { MUSIC_LINKS_DEFAULT } from "./src/data/music_links.js";
+import { v2 as cloudinary } from "cloudinary";
 
 // Load environment variables
 dotenv.config();
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -719,6 +728,228 @@ app.post("/api/upload", authenticateToken as any, async (req: Request, res: Resp
     return sendResponse(res, 200, true, "Dùng ảnh mặc định thành công!", placeholder);
   } catch (error: any) {
     return sendResponse(res, 500, false, "Lỗi upload ảnh: " + error.message);
+  }
+});
+
+
+// --- PHOTOS MODULE ---
+const photoCreateSchema = z.object({
+  title: z.string().min(1, "Tiêu đề không được để trống"),
+  description: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+  file: z.string().min(1, "File ảnh base64 không được để trống"),
+});
+
+const photoUpdateSchema = z.object({
+  title: z.string().min(1, "Tiêu đề không được để trống"),
+  description: z.string().nullable().optional(),
+  tags: z.array(z.string()).default([]),
+});
+
+app.post("/api/photos", authenticateToken as any, async (req: Request, res: Response) => {
+  try {
+    const parsed = photoCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendResponse(res, 400, false, parsed.error.issues[0].message);
+    }
+    const { title, description, tags, file } = parsed.data;
+
+    const uploadRes = await cloudinary.uploader.upload(file, {
+      folder: "cyberpunk_portfolio",
+    });
+
+    const photo = await prisma.photo.create({
+      data: {
+        title,
+        description: description || "",
+        tags,
+        cloudinaryPublicId: uploadRes.public_id,
+        secureUrl: uploadRes.secure_url,
+        width: uploadRes.width,
+        height: uploadRes.height,
+        format: uploadRes.format,
+        bytes: uploadRes.bytes,
+      },
+    });
+
+    return sendResponse(res, 201, true, "Đăng ảnh lên thành công!", photo);
+  } catch (error: any) {
+    console.error("Lỗi upload ảnh:", error);
+    return sendResponse(res, 500, false, "Lỗi khi upload ảnh: " + error.message);
+  }
+});
+
+app.get("/api/photos", async (req: Request, res: Response) => {
+  try {
+    const { q, format, date, sortBy = "createdAt", sortOrder = "desc", page = "1", limit = "12" } = req.query;
+
+    const pageNum = parseInt(page as string) || 1;
+    const limitNum = parseInt(limit as string) || 12;
+    const skip = (pageNum - 1) * limitNum;
+
+    const where: any = {};
+
+    if (q && String(q).trim() !== "") {
+      const searchStr = String(q).trim();
+      where.OR = [
+        { title: { contains: searchStr, mode: "insensitive" } },
+        { description: { contains: searchStr, mode: "insensitive" } },
+        { tags: { has: searchStr } },
+      ];
+    }
+
+    if (format && String(format).trim() !== "") {
+      where.format = { equals: String(format).toLowerCase() };
+    }
+
+    if (date && String(date).trim() !== "") {
+      const now = new Date();
+      if (date === "today") {
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        where.createdAt = { gte: today };
+      } else if (date === "week") {
+        const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        where.createdAt = { gte: lastWeek };
+      } else if (date === "month") {
+        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+        where.createdAt = { gte: lastMonth };
+      }
+    }
+
+    let orderBy: any = {};
+    if (sortBy === "title") {
+      orderBy = { title: sortOrder === "desc" ? "desc" : "asc" };
+    } else if (sortBy === "size") {
+      orderBy = { bytes: sortOrder === "desc" ? "desc" : "asc" };
+    } else if (sortBy === "oldest") {
+      orderBy = { createdAt: "asc" };
+    } else {
+      orderBy = { createdAt: "desc" };
+    }
+
+    const [photos, total] = await Promise.all([
+      prisma.photo.findMany({
+        where,
+        orderBy,
+        skip,
+        take: limitNum,
+      }),
+      prisma.photo.count({ where }),
+    ]);
+
+    return sendResponse(res, 200, true, "Lấy danh sách ảnh thành công", {
+      photos,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  } catch (error: any) {
+    return sendResponse(res, 500, false, "Lỗi khi lấy danh sách ảnh: " + error.message);
+  }
+});
+
+app.get("/api/photos/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const photo = await prisma.photo.findUnique({ where: { id } });
+    if (!photo) {
+      return sendResponse(res, 404, false, "Không tìm thấy ảnh.");
+    }
+    return sendResponse(res, 200, true, "Lấy chi tiết ảnh thành công", photo);
+  } catch (error: any) {
+    return sendResponse(res, 500, false, "Lỗi lấy chi tiết ảnh: " + error.message);
+  }
+});
+
+app.put("/api/photos/:id", authenticateToken as any, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const parsed = photoUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendResponse(res, 400, false, parsed.error.issues[0].message);
+    }
+
+    const photo = await prisma.photo.findUnique({ where: { id } });
+    if (!photo) {
+      return sendResponse(res, 404, false, "Không tìm thấy ảnh để chỉnh sửa.");
+    }
+
+    const updatedPhoto = await prisma.photo.update({
+      where: { id },
+      data: parsed.data,
+    });
+
+    return sendResponse(res, 200, true, "Cập nhật thông tin ảnh thành công!", updatedPhoto);
+  } catch (error: any) {
+    return sendResponse(res, 500, false, "Lỗi khi cập nhật ảnh: " + error.message);
+  }
+});
+
+app.delete("/api/photos/:id", authenticateToken as any, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const photo = await prisma.photo.findUnique({ where: { id } });
+    if (!photo) {
+      return sendResponse(res, 404, false, "Không tìm thấy ảnh để xóa.");
+    }
+
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+      try {
+        await cloudinary.uploader.destroy(photo.cloudinaryPublicId);
+      } catch (clErr: any) {
+        console.warn("Lỗi khi xóa ảnh trên Cloudinary:", clErr.message);
+      }
+    }
+
+    await prisma.photo.delete({ where: { id } });
+
+    return sendResponse(res, 200, true, "Xóa ảnh thành công!");
+  } catch (error: any) {
+    return sendResponse(res, 500, false, "Lỗi khi xóa ảnh: " + error.message);
+  }
+});
+
+app.get("/api/dashboard", authenticateToken as any, async (req: Request, res: Response) => {
+  try {
+    const totalPhotos = await prisma.photo.count();
+
+    const sumResult = await prisma.photo.aggregate({
+      _sum: {
+        bytes: true,
+      },
+    });
+    const totalSize = sumResult._sum.bytes || 0;
+
+    const newestPhoto = await prisma.photo.findFirst({
+      orderBy: { createdAt: "desc" },
+    });
+
+    let cloudinaryStorageUsed = 0;
+    let cloudinaryStorageLimit = 0;
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+      try {
+        const usage = await cloudinary.api.usage();
+        cloudinaryStorageUsed = usage.storage.usage;
+        cloudinaryStorageLimit = usage.storage.limit;
+      } catch (cErr: any) {
+        console.warn("Không lấy được dung lượng Cloudinary:", cErr.message);
+      }
+    }
+
+    return sendResponse(res, 200, true, "Lấy thông tin dashboard thành công", {
+      totalPhotos,
+      totalSize,
+      newestPhoto,
+      cloudinaryUsage: {
+        used: cloudinaryStorageUsed,
+        limit: cloudinaryStorageLimit,
+      },
+    });
+  } catch (error: any) {
+    return sendResponse(res, 500, false, "Lỗi khi lấy thông tin dashboard: " + error.message);
   }
 });
 

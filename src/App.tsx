@@ -12,6 +12,7 @@ import Certificates from "./components/Certificates";
 import Contact from "./components/Contact";
 import Footer from "./components/Footer";
 import AdminDashboard from "./components/AdminDashboard";
+import PhotosManager from "./components/PhotosManager";
 import { UserProfile, Skill, Project, Roadmap, Experience, Certificate, SiteSettings } from "./types";
 
 export default function App() {
@@ -157,6 +158,7 @@ export default function App() {
         setToken(data.data.token);
         setIsLoggedIn(true);
         setIsAdminView(true);
+        setAdminActiveTab("profile");
         setUsername("");
         setPassword("");
       } else {
@@ -207,6 +209,123 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  const isUploadRoute = window.location.pathname === "/upload";
+
+  if (isUploadRoute) {
+    if (isLoggedIn) {
+      return (
+        <div className="text-gray-100 min-h-screen bg-transparent relative selection:bg-cyan-500 selection:text-slate-950">
+          <CyberBackground />
+          <div className="max-w-7xl mx-auto px-4 py-8 relative z-10 space-y-6 animate-fadeIn">
+            {/* Standalone Upload Station Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#070d1d]/90 border border-cyan-500/20 p-5 rounded-lg backdrop-blur-md shadow-[0_0_20px_rgba(34,211,238,0.1)]">
+              <div className="flex items-center space-x-3">
+                <div className="relative flex items-center justify-center w-10 h-10 rounded-full overflow-hidden bg-gradient-to-tr from-blue-600 to-cyan-400 text-white font-bold text-xl shadow-[0_0_15px_rgba(34,211,238,0.5)]">
+                  <img src="https://files.catbox.moe/5f5zq9.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <span className="absolute -inset-0.5 rounded-full bg-cyan-400/20 blur animate-pulse pointer-events-none" />
+                </div>
+                <div>
+                  <h1 className="font-sans font-black text-lg tracking-wider text-white">
+                    UPLOAD CENTRAL STATION // 📂
+                  </h1>
+                  <p className="text-[9px] text-cyan-400 font-mono uppercase tracking-widest mt-0.5">
+                    CLOUDINARY MULTI-UPLOADER GATEWAY v1.0
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Links */}
+              <div className="flex items-center gap-3 font-mono text-[10px] font-bold">
+                <button
+                  onClick={() => { window.location.href = "/"; }}
+                  className="px-4 py-2 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 rounded uppercase transition-colors cursor-pointer"
+                >
+                  &lt; PORTFOLIO HOME
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 border border-pink-500/40 text-pink-400 hover:bg-pink-500/10 rounded uppercase transition-colors cursor-pointer"
+                >
+                  ĐĂNG XUẤT // LOGOUT
+                </button>
+              </div>
+            </div>
+
+            {/* Photos Manager Dashboard & Grid */}
+            <PhotosManager token={token} />
+          </div>
+        </div>
+      );
+    } else {
+      return (
+        <div className="text-gray-100 min-h-screen bg-transparent relative flex items-center justify-center px-4 selection:bg-cyan-500 selection:text-slate-950">
+          <CyberBackground />
+          <div className="relative max-w-sm w-full group z-10">
+            <div className="absolute -inset-1.5 bg-gradient-to-tr from-purple-600 to-pink-500 rounded-lg opacity-30 blur animate-pulse" />
+            <div className="relative bg-[#0c0721]/95 border border-purple-500/30 p-6 sm:p-8 rounded-lg backdrop-blur-md">
+              <div className="text-center space-y-2 mb-6">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 mb-2 shadow-[0_0_15px_rgba(34,211,238,0.3)] animate-bounce">
+                  <Terminal className="w-5 h-5" />
+                </div>
+                <h3 className="font-sans font-black text-lg text-white uppercase tracking-tight">UPLOAD STATION ACCESS</h3>
+                <p className="font-mono text-[9px] text-cyan-400 tracking-wider">SECURE_GATEWAY_v1.0</p>
+              </div>
+
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="font-mono text-[9px] text-gray-400 font-bold uppercase tracking-wider">Tên tài khoản (Seed: admin)</label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-black/60 border border-gray-800 focus:border-cyan-400 rounded text-xs text-white focus:outline-none"
+                    placeholder="Username"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-mono text-[9px] text-gray-400 font-bold uppercase tracking-wider">Mật khẩu (Seed: admin123)</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-black/60 border border-gray-800 focus:border-cyan-400 rounded text-xs text-white focus:outline-none"
+                    placeholder="Password"
+                    required
+                  />
+                </div>
+
+                {loginError && (
+                  <div className="p-3 rounded bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[11px] font-medium flex items-center space-x-1.5 animate-pulse">
+                    <ShieldAlert className="w-4 h-4 shrink-0" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="w-full py-2.5 font-mono text-xs font-bold uppercase tracking-wider bg-cyan-400 hover:bg-cyan-500 text-black rounded transition-colors duration-200 shadow-[0_0_15px_rgba(34,211,238,0.35)] cursor-pointer disabled:opacity-50"
+                >
+                  {loginLoading ? "XÁC MINH DANH TÍNH..." : "ĐĂNG NHẬP // UPLOAD ACCESS"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = "/"; }}
+                  className="w-full py-2 font-mono text-[9px] font-bold text-gray-500 hover:text-white transition-colors duration-150 uppercase"
+                >
+                  &lt; PORTFOLIO HOME
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 
   return (
@@ -281,7 +400,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-mono text-[9px] text-gray-400 font-bold uppercase tracking-wider">Mật khẩu (Seed: admin)</label>
+                    <label className="font-mono text-[9px] text-gray-400 font-bold uppercase tracking-wider">Mật khẩu (Seed: admin123)</label>
                     <input
                       type="password"
                       value={password}
