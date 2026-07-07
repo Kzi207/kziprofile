@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quy đổi điểm Học bạ sang điểm thi THPT 2025 - ĐHCT</title>
+<title>Quy đổi điểm Học bạ / V-SAT sang điểm thi THPT</title>
 <link rel="icon" href="https://files.catbox.moe/4gi119.jpg" type="image/jpeg">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
@@ -30,21 +30,10 @@
     scrollbar-color: rgba(236, 72, 153, 0.4) #0a061c;
   }
 
-  /* Custom glowing scrollbar */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: #0a061c;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: rgba(236, 72, 153, 0.4);
-    border-radius: 4px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(244, 63, 94, 0.8);
-  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0a061c; }
+  ::-webkit-scrollbar-thumb { background: rgba(236, 72, 153, 0.4); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(244, 63, 94, 0.8); }
 
   body {
     margin: 0;
@@ -61,15 +50,8 @@
     min-h: 100vh;
   }
 
-  .wrap {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
+  .wrap { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
 
-  /* Header Section */
   header {
     position: relative;
     background: linear-gradient(135deg, rgba(30, 16, 74, 0.8), rgba(12, 6, 33, 0.9));
@@ -80,70 +62,59 @@
     backdrop-filter: blur(12px);
     overflow: hidden;
   }
-
   header::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
     background: linear-gradient(90deg, var(--neon-pink), var(--neon-cyan));
   }
-
-  .header-content {
-    position: relative;
-    z-index: 2;
-  }
-
-  .header-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(236, 72, 153, 0.1);
-    border: 1px solid rgba(236, 72, 153, 0.3);
-    color: var(--neon-pink);
-    padding: 4px 12px;
-    border-radius: 9999px;
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
+  .header-content { position: relative; z-index: 2; }
   header h1 {
-    margin: 0 0 12px;
-    font-size: 28px;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+    margin: 0 0 12px; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;
     background: linear-gradient(90deg, #ffffff, #e2e8f0);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
+  header p { margin: 0; color: var(--text-muted); font-size: 14px; line-height: 1.6; max-width: 850px; }
 
-  header p {
-    margin: 0;
+  /* Mode switch */
+  .mode-switch {
+    display: flex;
+    gap: 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 6px;
+    border-radius: 14px;
+    margin-top: 20px;
+  }
+  .mode-btn {
+    flex: 1;
+    background: transparent;
     color: var(--text-muted);
+    border: none;
+    box-shadow: none;
+    padding: 12px 16px;
+    font-weight: 700;
     font-size: 14px;
-    line-height: 1.6;
-    max-width: 850px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .mode-btn:hover { color: #fff; transform: none; box-shadow: none; background: rgba(255,255,255,0.05); }
+  .mode-btn.active {
+    background: linear-gradient(135deg, var(--neon-pink), #c084fc);
+    color: #fff;
+    box-shadow: var(--glow-pink);
+  }
+  .mode-btn.active.vsat {
+    background: linear-gradient(135deg, var(--neon-cyan), #6366f1);
+    box-shadow: var(--glow-cyan);
   }
 
-  /* Two-Column Layout */
-  .grid-layout {
-    display: grid;
-    grid-template-columns: 480px 1fr;
-    gap: 24px;
-  }
+  .grid-layout { display: grid; grid-template-columns: 480px 1fr; gap: 24px; }
+  @media (max-width: 1024px) { .grid-layout { grid-template-columns: 1fr; } }
 
-  @media (max-width: 1024px) {
-    .grid-layout {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  /* Card Styles */
   .card {
     background: var(--bg-card);
     border: 1px solid var(--border-cyan);
@@ -155,67 +126,28 @@
     flex-direction: column;
     height: fit-content;
   }
+  .card.glowing-pink { border-color: var(--border-pink); }
+  .card h2 { font-size: 18px; font-weight: 700; margin: 0 0 20px; color: #fff; display: flex; align-items: center; gap: 10px; }
+  .card h2 svg { color: var(--neon-cyan); }
+  .card.glowing-pink h2 svg { color: var(--neon-pink); }
 
-  .card.glowing-pink {
-    border-color: var(--border-pink);
-  }
-
-  .card h2 {
-    font-size: 18px;
-    font-weight: 700;
-    margin: 0 0 20px;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .card h2 svg {
-    color: var(--neon-cyan);
-  }
-
-  .card.glowing-pink h2 svg {
-    color: var(--neon-pink);
-  }
-
-  /* Inputs Grid */
-  .subjects-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-  }
-
-  /* Handled in mobile media queries */
+  .subjects-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .subjects-grid.single-col { grid-template-columns: 1fr; max-width: 360px; }
 
   .field {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: flex; flex-direction: column; gap: 8px;
     background: rgba(255, 255, 255, 0.02);
-    padding: 12px;
-    border-radius: 10px;
+    padding: 12px; border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.04);
     transition: all 0.2s ease;
   }
-
   .field:hover, .field:focus-within {
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(6, 182, 212, 0.4);
     box-shadow: 0 0 10px rgba(6, 182, 212, 0.05);
   }
-
-  .field label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .input-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-
+  .field label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .input-wrapper { position: relative; display: flex; align-items: center; }
   .field input {
     width: 100%;
     background: rgba(7, 4, 20, 0.8);
@@ -228,679 +160,236 @@
     outline: none;
     transition: all 0.2s ease;
   }
+  .field input:focus { border-color: var(--neon-cyan); box-shadow: var(--glow-cyan); }
 
-  .field input:focus {
-    border-color: var(--neon-cyan);
-    box-shadow: var(--glow-cyan);
-  }
-
-  /* Floating Action Buttons */
-  .actions {
-    margin-top: 24px;
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
+  .actions { margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; }
   button {
     background: linear-gradient(135deg, var(--neon-pink), #c084fc);
-    color: #fff;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+    color: #fff; border: none; padding: 12px 24px; border-radius: 10px;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: var(--glow-pink);
   }
-
-  button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 0 20px rgba(236, 72, 153, 0.5);
-  }
-
-  button:active {
-    transform: translateY(0);
-  }
-
+  button:hover { transform: translateY(-2px); box-shadow: 0 0 20px rgba(236, 72, 153, 0.5); }
+  button:active { transform: translateY(0); }
   button.secondary {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-primary);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: none;
+    background: rgba(255, 255, 255, 0.05); color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: none;
   }
+  button.secondary:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--neon-cyan); box-shadow: var(--glow-cyan); }
 
-  button.secondary:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: var(--neon-cyan);
-    box-shadow: var(--glow-cyan);
-  }
-
-  /* Tabs Layout */
   .tabs {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 20px;
+    display: flex; gap: 8px; margin-bottom: 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding-bottom: 8px;
-    overflow-x: auto;
-    white-space: nowrap;
-    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch;
   }
-  .tabs::-webkit-scrollbar {
-    display: none;
-  }
-  .tab-btn {
-    flex-shrink: 0;
-  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn { flex-shrink: 0; background: transparent; color: var(--text-muted); border: none; box-shadow: none;
+    padding: 8px 16px; font-weight: 600; font-size: 14px; cursor: pointer; border-radius: 6px; transition: all 0.2s ease; }
+  .tab-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.05); transform: none; box-shadow: none; }
+  .tab-btn.active { color: var(--neon-cyan); background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.2); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; animation: fadeIn 0.3s ease-out; }
 
-  .tab-btn {
-    background: transparent;
-    color: var(--text-muted);
-    border: none;
-    box-shadow: none;
-    padding: 8px 16px;
-    font-weight: 600;
-    font-size: 14px;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-  }
-
-  .tab-btn:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.05);
-    transform: none;
-    box-shadow: none;
-  }
-
-  .tab-btn.active {
-    color: var(--neon-cyan);
-    background: rgba(6, 182, 212, 0.1);
-    border: 1px solid rgba(6, 182, 212, 0.2);
-  }
-
-  .tab-content {
-    display: none;
-  }
-
-  .tab-content.active {
-    display: block;
-    animation: fadeIn 0.3s ease-out;
-  }
-
-  /* Tables Styles */
-  .table-container {
-    overflow-x: auto;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-    text-align: left;
-  }
-
+  .table-container { overflow-x: auto; border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
   th {
-    background: rgba(18, 11, 41, 0.8);
-    color: var(--neon-cyan);
-    font-weight: 700;
-    text-transform: uppercase;
-    font-size: 12px;
-    letter-spacing: 0.05em;
-    padding: 14px 16px;
-    border-bottom: 1px solid rgba(6, 182, 212, 0.2);
+    background: rgba(18, 11, 41, 0.8); color: var(--neon-cyan); font-weight: 700;
+    text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em;
+    padding: 14px 16px; border-bottom: 1px solid rgba(6, 182, 212, 0.2);
   }
+  td { padding: 14px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); background: rgba(255, 255, 255, 0.01); }
+  tr:hover td { background: rgba(255, 255, 255, 0.03); }
 
-  td {
-    padding: 14px 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    background: rgba(255, 255, 255, 0.01);
-  }
-
-  tr:hover td {
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  /* Values styling */
-  .score {
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 700;
-    color: var(--neon-green);
-    text-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
-    font-size: 16px;
-  }
-
+  .score { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--neon-green);
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.2); font-size: 16px; }
   .badge {
-    display: inline-block;
-    background: rgba(6, 182, 212, 0.1);
-    color: var(--neon-cyan);
-    border: 1px solid rgba(6, 182, 212, 0.3);
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-weight: 700;
-    font-size: 12px;
-    font-family: 'JetBrains Mono', monospace;
+    display: inline-block; background: rgba(6, 182, 212, 0.1); color: var(--neon-cyan);
+    border: 1px solid rgba(6, 182, 212, 0.3); padding: 2px 8px; border-radius: 6px;
+    font-weight: 700; font-size: 12px; font-family: 'JetBrains Mono', monospace;
   }
+  .badge.pink { background: rgba(236, 72, 153, 0.1); color: var(--neon-pink); border-color: rgba(236, 72, 153, 0.3); }
 
-  .badge.pink {
-    background: rgba(236, 72, 153, 0.1);
-    color: var(--neon-pink);
-    border-color: rgba(236, 72, 153, 0.3);
-  }
+  .empty { padding: 48px; text-align: center; color: var(--text-muted); font-size: 14px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .empty svg { color: var(--neon-pink); opacity: 0.5; }
 
-  .empty {
-    padding: 48px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 14px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .empty svg {
-    color: var(--neon-pink);
-    opacity: 0.5;
-  }
-
-  /* Interpolation visualization widget */
   .interpolation-widget {
-    background: rgba(7, 4, 20, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-    padding: 16px;
-    margin-top: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    background: rgba(7, 4, 20, 0.5); border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px; padding: 16px; margin-top: 12px; display: flex; flex-direction: column; gap: 10px;
   }
-
-  .visual-line-container {
-    position: relative;
-    height: 36px;
-    margin: 8px 0;
-    display: flex;
-    align-items: center;
-  }
-
-  .visual-track {
-    width: 100%;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 999px;
-    position: relative;
-  }
-
-  .visual-interval {
-    position: absolute;
-    height: 100%;
-    background: linear-gradient(90deg, rgba(6, 182, 212, 0.4), rgba(236, 72, 153, 0.4));
-    border-radius: 999px;
-  }
-
+  .visual-line-container { position: relative; height: 36px; margin: 8px 0; display: flex; align-items: center; }
+  .visual-track { width: 100%; height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 999px; position: relative; }
+  .visual-interval { position: absolute; height: 100%; background: linear-gradient(90deg, rgba(6, 182, 212, 0.4), rgba(236, 72, 153, 0.4)); border-radius: 999px; }
   .visual-marker {
-    position: absolute;
-    width: 14px;
-    height: 14px;
-    background: #fff;
-    border: 3px solid var(--neon-pink);
-    box-shadow: 0 0 10px var(--neon-pink);
-    border-radius: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 10;
+    position: absolute; width: 14px; height: 14px; background: #fff; border: 3px solid var(--neon-pink);
+    box-shadow: 0 0 10px var(--neon-pink); border-radius: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10;
   }
-
   .visual-marker::after {
-    content: attr(data-val);
-    position: absolute;
-    bottom: 18px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(236, 72, 153, 0.9);
-    color: #fff;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 700;
-    white-space: nowrap;
-    box-shadow: var(--glow-pink);
+    content: attr(data-val); position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: rgba(236, 72, 153, 0.9); color: #fff; padding: 2px 6px; border-radius: 4px;
+    font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 700; white-space: nowrap; box-shadow: var(--glow-pink);
   }
+  .visual-labels { display: flex; justify-content: space-between; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); }
+  .visual-labels span strong { color: #fff; }
 
-  .visual-labels {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
-    color: var(--text-muted);
-  }
-
-  .visual-labels span strong {
-    color: #fff;
-  }
-
-  /* Search & Filter bar */
-  .filter-bar {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-  }
-
-  .search-wrapper {
-    position: relative;
-    flex: 1;
-    min-width: 200px;
-  }
-
+  .filter-bar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .search-wrapper { position: relative; flex: 1; min-width: 200px; }
   .search-wrapper input {
-    width: 100%;
-    background: rgba(7, 4, 20, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #fff;
-    padding: 10px 12px 10px 36px;
-    border-radius: 8px;
-    font-size: 14px;
-    outline: none;
-    transition: all 0.2s ease;
+    width: 100%; background: rgba(7, 4, 20, 0.8); border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff; padding: 10px 12px 10px 36px; border-radius: 8px; font-size: 14px; outline: none; transition: all 0.2s ease;
   }
+  .search-wrapper input:focus { border-color: var(--neon-cyan); box-shadow: var(--glow-cyan); }
+  .search-wrapper svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); width: 16px; height: 16px; }
 
-  .search-wrapper input:focus {
-    border-color: var(--neon-cyan);
-    box-shadow: var(--glow-cyan);
-  }
-
-  .search-wrapper svg {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--text-muted);
-    width: 16px;
-    height: 16px;
-  }
-
-  .combo-filters {
-    display: flex;
-    gap: 6px;
-  }
-
+  .combo-filters { display: flex; gap: 6px; }
   .filter-pill {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-muted);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 6px 12px;
-    border-radius: 9999px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 6px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s ease;
   }
+  .filter-pill:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+  .filter-pill.active { background: rgba(236, 72, 153, 0.1); color: var(--neon-pink); border-color: rgba(236, 72, 153, 0.3); }
 
-  .filter-pill:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .filter-pill.active {
-    background: rgba(236, 72, 153, 0.1);
-    color: var(--neon-pink);
-    border-color: rgba(236, 72, 153, 0.3);
-  }
-
-  /* Info/Formula design */
-  .formula-box {
-    background: rgba(6, 182, 212, 0.05);
-    border: 1px solid var(--border-cyan);
-    border-radius: 12px;
-    padding: 16px;
-    margin-top: 16px;
-  }
-
-  .formula-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--neon-cyan);
-    margin: 0 0 8px 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
+  .formula-box { background: rgba(6, 182, 212, 0.05); border: 1px solid var(--border-cyan); border-radius: 12px; padding: 16px; margin-top: 16px; }
+  .formula-title { font-size: 14px; font-weight: 700; color: var(--neon-cyan); margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px; }
   .formula-expr {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 15px;
-    color: #fff;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 8px 12px;
-    border-radius: 6px;
-    text-align: center;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #fff; background: rgba(0, 0, 0, 0.3);
+    padding: 8px 12px; border-radius: 6px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.05);
   }
+  .formula-vars { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-top: 8px; }
+  .formula-vars strong { color: #fff; font-family: 'JetBrains Mono', monospace; }
 
-  .formula-vars {
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.6;
-    margin-top: 8px;
-  }
+  .step-formula { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-muted); }
+  .step-formula b { color: var(--neon-pink); }
 
-  .formula-vars strong {
-    color: #fff;
-    font-family: 'JetBrains Mono', monospace;
-  }
+  .combo-detail-grid { display: grid; gap: 6px; }
+  .combo-detail-row { display: flex; justify-content: space-between; font-size: 13px; }
 
-  /* Utility details */
-  .step-formula {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
+  .footer-note { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 32px; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 16px; }
 
-  .step-formula b {
-    color: var(--neon-pink);
-  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
-  .combo-detail-grid {
-    display: grid;
-    gap: 6px;
-  }
+  .status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 6px; }
+  .status-badge.complete { background: rgba(16, 185, 129, 0.15); color: var(--neon-green); border: 1px solid rgba(16, 185, 129, 0.3); box-shadow: 0 0 10px rgba(16, 185, 129, 0.1); }
+  .status-badge.missing { background: rgba(245, 158, 11, 0.15); color: var(--neon-yellow); border: 1px solid rgba(245, 158, 11, 0.3); }
 
-  .combo-detail-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-  }
-
-  .footer-note {
-    font-size: 12px;
-    color: var(--text-muted);
-    text-align: center;
-    margin-top: 32px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    padding-top: 16px;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  /* Glow status */
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 6px;
-  }
-  .status-badge.complete {
-    background: rgba(16, 185, 129, 0.15);
-    color: var(--neon-green);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
-  }
-  .status-badge.missing {
-    background: rgba(245, 158, 11, 0.15);
-    color: var(--neon-yellow);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-  }
-
-  /* Reference select */
-  .reference-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-  }
-
-  .custom-select {
-    position: relative;
-    min-width: 220px;
-  }
-
+  .reference-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .custom-select { position: relative; min-width: 220px; }
   .custom-select select {
-    width: 100%;
-    background: rgba(7, 4, 20, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: #fff;
-    padding: 10px 32px 10px 12px;
-    border-radius: 8px;
-    font-size: 14px;
-    outline: none;
-    appearance: none;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    width: 100%; background: rgba(7, 4, 20, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); color: #fff;
+    padding: 10px 32px 10px 12px; border-radius: 8px; font-size: 14px; outline: none; appearance: none; cursor: pointer; transition: all 0.2s ease;
   }
+  .custom-select select:focus { border-color: var(--neon-cyan); box-shadow: var(--glow-cyan); }
+  .custom-select::after { content: '▼'; font-size: 10px; color: var(--text-muted); position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 
-  .custom-select select:focus {
-    border-color: var(--neon-cyan);
-    box-shadow: var(--glow-cyan);
-  }
-
-  .custom-select::after {
-    content: '▼';
-    font-size: 10px;
-    color: var(--text-muted);
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    pointer-events: none;
-  }
-
-  /* Warning Banner style */
   .warning-banner {
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.4);
-    color: #f59e0b;
-    padding: 16px 20px;
-    border-radius: 12px;
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1.5;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
-    margin-bottom: 8px;
-    border-left: 5px solid var(--neon-yellow);
-    animation: borderGlow 2s infinite alternate;
+    background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.4); color: #f59e0b;
+    padding: 16px 20px; border-radius: 12px; font-size: 14px; font-weight: 600; line-height: 1.5;
+    display: flex; align-items: center; gap: 14px; box-shadow: 0 0 15px rgba(245, 158, 11, 0.15);
+    margin-bottom: 8px; border-left: 5px solid var(--neon-yellow); animation: borderGlow 2s infinite alternate;
   }
-  .warning-banner svg {
-    flex-shrink: 0;
-    color: var(--neon-yellow);
-    animation: flash 1.5s infinite alternate;
+  .warning-banner svg { flex-shrink: 0; color: var(--neon-yellow); animation: flash 1.5s infinite alternate; }
+  @keyframes flash { from { opacity: 0.5; filter: drop-shadow(0 0 2px var(--neon-yellow)); } to { opacity: 1; filter: drop-shadow(0 0 8px var(--neon-yellow)); } }
+  @keyframes borderGlow { from { box-shadow: 0 0 10px rgba(245, 158, 11, 0.1); } to { box-shadow: 0 0 20px rgba(245, 158, 11, 0.25); } }
+
+  .corr-note {
+    font-size: 12px; color: var(--text-muted); background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 10px 12px; margin-top: 10px; line-height: 1.5;
   }
-  @keyframes flash {
-    from { opacity: 0.5; filter: drop-shadow(0 0 2px var(--neon-yellow)); }
-    to { opacity: 1; filter: drop-shadow(0 0 8px var(--neon-yellow)); }
-  }
-  @keyframes borderGlow {
-    from { box-shadow: 0 0 10px rgba(245, 158, 11, 0.1); }
-    to { box-shadow: 0 0 20px rgba(245, 158, 11, 0.25); }
-  }
+  .corr-note b { color: #fff; }
 
   @media (max-width: 768px) {
-    body {
-      padding: 16px 8px;
-    }
-    .wrap {
-      gap: 16px;
-    }
-    header {
-      padding: 20px 16px;
-    }
-    header h1 {
-      font-size: 20px;
-    }
-    header p {
-      font-size: 13px;
-    }
-    .card {
-      padding: 16px;
-      border-radius: 12px;
-    }
-    .card h2 {
-      font-size: 15px;
-      margin-bottom: 14px;
-    }
-    .actions {
-      gap: 8px;
-    }
-    button {
-      padding: 10px 16px;
-      font-size: 13px;
-      width: 100%;
-      justify-content: center;
-    }
-    .subjects-grid {
-      grid-template-columns: 1fr;
-      gap: 10px;
-    }
-    .field {
-      padding: 10px;
-    }
-    .field input {
-      font-size: 16px; /* Prevent browser auto-zoom */
-    }
-    .combo-filters {
-      overflow-x: auto;
-      white-space: nowrap;
-      padding-bottom: 6px;
-      width: 100%;
-      -webkit-overflow-scrolling: touch;
-    }
-    .combo-filters::-webkit-scrollbar {
-      display: none;
-    }
-    .filter-pill {
-      flex-shrink: 0;
-    }
-    .interpolation-widget {
-      padding: 10px;
-    }
-    .visual-marker::after {
-      font-size: 10px;
-      bottom: 14px;
-    }
-    /* Make tables responsive */
-    table {
-      display: block;
-      width: 100%;
-      overflow-x: auto;
-      white-space: nowrap;
-      -webkit-overflow-scrolling: touch;
-    }
-    .warning-banner {
-      padding: 12px;
-      font-size: 13px;
-      gap: 8px;
-    }
+    body { padding: 16px 8px; }
+    .wrap { gap: 16px; }
+    header { padding: 20px 16px; }
+    header h1 { font-size: 19px; }
+    header p { font-size: 13px; }
+    .mode-switch { flex-direction: column; }
+    .card { padding: 16px; border-radius: 12px; }
+    .card h2 { font-size: 15px; margin-bottom: 14px; }
+    .actions { gap: 8px; }
+    button { padding: 10px 16px; font-size: 13px; width: 100%; justify-content: center; }
+    .subjects-grid { grid-template-columns: 1fr; gap: 10px; }
+    .field { padding: 10px; }
+    .field input { font-size: 16px; }
+    .combo-filters { overflow-x: auto; white-space: nowrap; padding-bottom: 6px; width: 100%; -webkit-overflow-scrolling: touch; }
+    .combo-filters::-webkit-scrollbar { display: none; }
+    .filter-pill { flex-shrink: 0; }
+    .interpolation-widget { padding: 10px; }
+    .visual-marker::after { font-size: 10px; bottom: 14px; }
+    table { display: block; width: 100%; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    .warning-banner { padding: 12px; font-size: 13px; gap: 8px; }
   }
 </style>
 </head>
 <body>
 
 <div class="wrap">
-  <!-- Warning Banner -->
   <div class="warning-banner">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-      <line x1="12" y1="9" x2="12" y2="13"/>
-      <line x1="12" y1="17" x2="12.01" y2="17"/>
+      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
     </svg>
-    <span><strong>KHUYẾN CÁO:</strong> Đây chỉ là công cụ tính toán tham khảo. Kết quả quy đổi có thể không hoàn toàn chính xác so với kết quả chính thức từ Hội đồng Tuyển sinh Trường</span>
+    <span><strong>KHUYẾN CÁO:</strong> Đây chỉ là công cụ tính toán mang tính chất tham khảo. Kết quả quy đổi chỉ dùng để đối chiếu thông tin và có thể không hoàn toàn chính xác so với kết quả chính thức.</span>
   </div>
 
-  <!-- Header -->
   <header>
     <div class="header-content">
-      <h1>Quy đổi điểm Học bạ → Điểm thi THPT 2025</h1>
+      <h1 id="pageTitle">Quy đổi điểm Học bạ → Điểm thi THPT</h1>
+      <p id="pageDesc">Chọn chế độ quy đổi phù hợp bên dưới: quy đổi điểm Học bạ (thang 10) hoặc quy đổi điểm thi V-SAT (thang 150) sang điểm tương đương thi tốt nghiệp THPT.</p>
+      <div class="mode-switch">
+        <button class="mode-btn active hocba" id="btnModeHocba" onclick="switchMode('hocba')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Học bạ → THPT
+        </button>
+        <button class="mode-btn vsat" id="btnModeVsat" onclick="switchMode('vsat')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21l2-7.5L2 9h7z"/></svg>
+          V-SAT → THPT
+        </button>
+      </div>
     </div>
   </header>
 
-  <!-- Content Grid -->
   <div class="grid-layout">
-    
-    <!-- Left Column: Grade Inputs & Formula Info -->
+
     <div style="display: flex; flex-direction: column; gap: 24px;">
-      
-      <!-- Card: Inputs -->
+
       <div class="card glowing-pink">
         <h2>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
-          Nhập điểm Học bạ (thang 10)
+          <span id="inputCardTitle">Nhập điểm Học bạ (thang 10)</span>
         </h2>
         <div class="subjects-grid" id="subjectInputs"></div>
         <div class="actions">
           <button onclick="calculateAll()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            Tính kết quả
+            <span id="calcBtnLabel">Tính kết quả</span>
           </button>
           <button class="secondary" onclick="fillDemo()">Điền dữ liệu mẫu</button>
           <button class="secondary" onclick="clearAll()">Xóa hết</button>
         </div>
       </div>
 
-      <!-- Card: Formulas -->
-      <div class="card">
-        <h2>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          Công thức nội suy tuyến tính
-        </h2>
-        <p style="margin:0 0 12px 0; font-size: 13.5px; line-height: 1.5; color: var(--text-muted);">
-          Điểm quy đổi được nội suy trong khoảng mốc giữa hai giá trị học bạ và thi THPT tương ứng.
-        </p>
-        <div class="formula-box">
-          <div class="formula-title">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-            Công thức nội suy
-          </div>
-          <div class="formula-expr">y = c + &lpar;x - a&rpar; / &lpar;b - a&rpar; * &lpar;d - c&rpar;</div>
-          <div class="formula-vars">
-            • <strong>x</strong>: Điểm Học bạ đã nhập.<br>
-            • <strong>y</strong>: Điểm quy đổi THPT tương ứng (làm tròn 2 chữ số thập phân).<br>
-            • <strong>a, b</strong>: Điểm mốc Học bạ cận dưới và cận trên (<strong>a < x ≤ b</strong>).<br>
-            • <strong>c, d</strong>: Điểm mốc thi THPT cận dưới và cận trên tương ứng (<strong>c < y ≤ d</strong>).
-          </div>
-        </div>
-      </div>
 
     </div>
 
-    <!-- Right Column: Results & Reference Tables (Tabs) -->
     <div class="card">
       <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('tab-subjects')">Điểm Quy Đổi Từng Môn</button>
-        <button class="tab-btn" onclick="switchTab('tab-combos')">Tổ Hợp Xét Tuyển</button>
-        <button class="tab-btn" onclick="switchTab('tab-reference')">Bảng Quy Đổi Gốc</button>
+        <button class="tab-btn" id="tabBtnCombos" onclick="switchTab('tab-combos')">Tổ Hợp Xét Tuyển</button>
+        <button class="tab-btn" id="tabBtnReference" onclick="switchTab('tab-reference')">Bảng Quy Đổi Gốc</button>
       </div>
 
-      <!-- Tab 1: Subject Results -->
       <div id="tab-subjects" class="tab-content active">
         <div id="subjectResults">
           <div class="empty">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            <span>Nhập điểm học bạ bên trái để xem kết quả quy đổi và biểu đồ chi tiết từng môn.</span>
+            <span>Nhập điểm bên trái để xem kết quả quy đổi và biểu đồ chi tiết từng môn.</span>
           </div>
         </div>
       </div>
 
-      <!-- Tab 2: Combo Scores -->
       <div id="tab-combos" class="tab-content">
         <div class="filter-bar">
           <div class="search-wrapper">
@@ -924,7 +413,6 @@
         </div>
       </div>
 
-      <!-- Tab 3: Reference Table -->
       <div id="tab-reference" class="tab-content">
         <div class="reference-header">
           <div style="font-size: 13.5px; color: var(--text-muted);">Chọn môn học để xem phụ lục khoảng điểm gốc:</div>
@@ -939,13 +427,12 @@
 
   </div>
 
-  <p class="footer-note">@2025
-   </p>
+  <p class="footer-note">Công cụ tính toán mang tính chất tham khảo — @2026</p>
 </div>
 
 <script>
-/* ===================== DỮ LIỆU QUY ĐỔI (Phụ lục TB 2939/TB-ĐHCT-ĐT) ===================== */
-const SUBJECT_TABLES = {
+/* ===================== DỮ LIỆU QUY ĐỔI HỌC BẠ (thang 10) ===================== */
+const SUBJECT_TABLES_HOCBA = {
   "Toán": [
     {a:0,    b:3.43,  c:0,    d:1.05},
     {a:3.43, b:6.00,  c:1.05, d:3.25},
@@ -1113,6 +600,138 @@ const SUBJECT_TABLES = {
   ]
 };
 
+/* ===================== DỮ LIỆU QUY ĐỔI V-SAT (thang 150) ===================== */
+const SUBJECT_TABLES_VSAT = {
+  "Toán": [
+    {a:0,    b:61,   c:0,   d:5},
+    {a:61,   b:71.5, c:5,   d:5.75},
+    {a:71.5, b:79,   c:5.75,d:6.25},
+    {a:79,   b:86,   c:6.25,d:6.75},
+    {a:86,   b:92.5, c:6.75,d:7.25},
+    {a:92.5, b:98.5, c:7.25,d:7.5},
+    {a:98.5, b:105.5,c:7.5, d:7.75},
+    {a:105.5,b:113,  c:7.75,d:8.25},
+    {a:113,  b:122.5,c:8.25,d:8.5},
+    {a:122.5,b:129.5,c:8.5, d:9},
+    {a:129.5,b:136.5,c:9,   d:9},
+    {a:136.5,b:140.5,c:9,   d:9.5},
+    {a:140.5,b:144,  c:9.5, d:9.5},
+    {a:144,  b:150,  c:9.5, d:10}
+  ],
+  "Vật lí": [
+    {a:0,    b:61.5, c:0,   d:3.75},
+    {a:61.5, b:70,   c:3.75,d:4.35},
+    {a:70,   b:76.5, c:4.35,d:5},
+    {a:76.5, b:82,   c:5,   d:5.5},
+    {a:82,   b:87,   c:5.5, d:6},
+    {a:87,   b:92,   c:6,   d:6.25},
+    {a:92,   b:97.5, c:6.25,d:6.75},
+    {a:97.5, b:103.5,c:6.75,d:7.25},
+    {a:103.5,b:112.5,c:7.25,d:8},
+    {a:112.5,b:119,  c:8,   d:8.35},
+    {a:119,  b:126.5,c:8.35,d:8.75},
+    {a:126.5,b:131,  c:8.75,d:9},
+    {a:131,  b:135,  c:9,   d:9.25},
+    {a:135,  b:150,  c:9.25,d:10}
+  ],
+  "Hóa học": [
+    {a:0,   b:57,   c:0,   d:4.75},
+    {a:57,  b:66,   c:4.75,d:5.5},
+    {a:66,  b:73,   c:5.5, d:6.1},
+    {a:73,  b:80,   c:6.1, d:6.6},
+    {a:80,  b:86,   c:6.6, d:7},
+    {a:86,  b:92.5, c:7,   d:7.35},
+    {a:92.5,b:99,   c:7.35,d:7.75},
+    {a:99,  b:107,  c:7.75,d:8},
+    {a:107, b:117,  c:8,   d:8.5},
+    {a:117, b:125,  c:8.5, d:8.75},
+    {a:125, b:132,  c:8.75,d:9.25},
+    {a:132, b:136.5,c:9.25,d:9.25},
+    {a:136.5,b:140, c:9.25,d:9.5},
+    {a:140, b:150,  c:9.5, d:10}
+  ],
+  "Sinh học": [
+    {a:0,    b:62,   c:0,   d:4.75},
+    {a:62,   b:71,   c:4.75,d:5.35},
+    {a:71,   b:78,   c:5.35,d:5.75},
+    {a:78,   b:84,   c:5.75,d:6.1},
+    {a:84,   b:90.25,c:6.1, d:6.5},
+    {a:90.25,b:96,   c:6.5, d:6.85},
+    {a:96,   b:102,  c:6.85,d:7.25},
+    {a:102,  b:109,  c:7.25,d:7.75},
+    {a:109,  b:118.5,c:7.75,d:8.25},
+    {a:118.5,b:125,  c:8.25,d:8.75},
+    {a:125,  b:131,  c:8.75,d:9.25},
+    {a:131,  b:135,  c:9.25,d:9.5},
+    {a:135,  b:138,  c:9.5, d:9.75},
+    {a:138,  b:150,  c:9.75,d:10}
+  ],
+  "Lịch sử": [
+    {a:0,    b:75,   c:0,   d:5.75},
+    {a:75,   b:85,   c:5.75,d:6.5},
+    {a:85,   b:91.5, c:6.5, d:7},
+    {a:91.5, b:97.5, c:7,   d:7.35},
+    {a:97.5, b:103,  c:7.35,d:7.75},
+    {a:103,  b:108,  c:7.75,d:8.1},
+    {a:108,  b:113,  c:8.1, d:8.5},
+    {a:113,  b:119,  c:8.5, d:8.75},
+    {a:119,  b:126,  c:8.75,d:9.25},
+    {a:126,  b:131,  c:9.25,d:9.5},
+    {a:131,  b:136.5,c:9.5, d:9.75},
+    {a:136.5,b:138,  c:9.75,d:10},
+    {a:138,  b:141,  c:10,  d:10},
+    {a:141,  b:150,  c:10,  d:10}
+  ],
+  "Địa lí": [
+    {a:0,    b:68,   c:0,   d:4.6},
+    {a:68,   b:77.5, c:4.6, d:5.35},
+    {a:77.5, b:84.5, c:5.35,d:5.75},
+    {a:84.5, b:90.5, c:5.75,d:6.25},
+    {a:90.5, b:95.5, c:6.25,d:6.5},
+    {a:95.5, b:100.5,c:6.5, d:7},
+    {a:100.5,b:105.5,c:7,   d:7.25},
+    {a:105.5,b:112,  c:7.25,d:7.75},
+    {a:112,  b:119.5,c:7.75,d:8.25},
+    {a:119.5,b:125,  c:8.25,d:8.5},
+    {a:125,  b:130.5,c:8.5, d:8.75},
+    {a:130.5,b:134,  c:8.75,d:9},
+    {a:134,  b:135,  c:9,   d:9.5},
+    {a:135,  b:150,  c:9.5, d:10}
+  ],
+  "Tiếng Anh": [
+    {a:0,    b:59.5, c:0,   d:3.25},
+    {a:59.5, b:70,   c:3.25,d:3.75},
+    {a:70,   b:78.5, c:3.75,d:4.25},
+    {a:78.5, b:86,   c:4.25,d:4.75},
+    {a:86,   b:92.5, c:4.75,d:5},
+    {a:92.5, b:99,   c:5,   d:5.5},
+    {a:99,   b:105.5,c:5.5, d:5.75},
+    {a:105.5,b:112.9,c:5.75,d:6.5},
+    {a:112.9,b:121.5,c:6.5, d:7.25},
+    {a:121.5,b:129,  c:7.25,d:7.75},
+    {a:129,  b:135,  c:7.75,d:8.5},
+    {a:135,  b:138,  c:8.5, d:8.75},
+    {a:138,  b:142,  c:8.75,d:9.25},
+    {a:142,  b:150,  c:9.25,d:10}
+  ],
+  "Ngữ văn": [
+    {a:0,    b:87,   c:0,   d:5.75},
+    {a:87,   b:93.5, c:5.75,d:6.25},
+    {a:93.5, b:98.5, c:6.25,d:6.75},
+    {a:98.5, b:102.5,c:6.75,d:7},
+    {a:102.5,b:106,  c:7,   d:7.25},
+    {a:106,  b:109.5,c:7.25,d:7.5},
+    {a:109.5,b:113,  c:7.5, d:7.75},
+    {a:113,  b:116.5,c:7.75,d:8},
+    {a:116.5,b:121.5,c:8,   d:8.25},
+    {a:121.5,b:125,  c:8.25,d:8.5},
+    {a:125,  b:129,  c:8.5, d:8.75},
+    {a:129,  b:131.5,c:8.75,d:9},
+    {a:131.5,b:133.5,c:9,   d:9},
+    {a:133.5,b:150,  c:9,   d:10}
+  ]
+};
+
 const COMBOS = {
   "A00":["Toán","Vật lí","Hóa học"],
   "A01":["Toán","Vật lí","Tiếng Anh"],
@@ -1156,21 +775,63 @@ const COMBOS = {
   "X78":["Ngữ văn","Tiếng Anh","GDKT&PL"]
 };
 
-const SUBJECT_LIST = Object.keys(SUBJECT_TABLES);
+/* ===================== CẤU HÌNH CHẾ ĐỘ ===================== */
+const MODE_CONFIG = {
+  hocba: {
+    tables: SUBJECT_TABLES_HOCBA,
+    max: 10,
+    step: 0.01,
+    inputLabel: "Nhập điểm Học bạ (thang 10)",
+    xLabel: "Học bạ",
+    storageKey: "ctu_quydoi_scores_hocba",
+    pageTitle: "Quy đổi điểm Học bạ → Điểm thi THPT",
+    pageDesc: "Nhập điểm học bạ (thang 10) từng môn để xem điểm quy đổi tương đương điểm thi tốt nghiệp THPT.",
+    formulaDesc: "Điểm quy đổi được nội suy trong khoảng mốc giữa hai giá trị học bạ và thi THPT tương ứng.",
+    exampleVarsX: "Điểm Học bạ đã nhập",
+    emptyMsg: "Nhập điểm bên trái để xem kết quả quy đổi từng môn."
+  },
+  vsat: {
+    tables: SUBJECT_TABLES_VSAT,
+    max: 150,
+    step: 0.5,
+    inputLabel: "Nhập điểm thi V-SAT (thang 150)",
+    xLabel: "V-SAT",
+    storageKey: "ctu_quydoi_scores_vsat",
+    pageTitle: "Quy đổi điểm thi V-SAT → Điểm thi THPT",
+    pageDesc: "Quy đổi điểm thi V-SAT (thang 150) sang điểm tương đương thi tốt nghiệp THPT bằng phương pháp bách phân vị kết hợp nội suy tuyến tính.",
+    formulaDesc: "Các mốc phân vị (0.5%, 1%, 2%, 5%, 10%...90%) được xác định độc lập trên phân bố điểm V-SAT và phân bố điểm thi tốt nghiệp THPT của cùng nhóm thí sinh.",
+    exampleVarsX: "Điểm thi V-SAT đã nhập",
+    emptyMsg: "Chọn môn thi và nhập điểm V-SAT bên trái, bấm \"Tính kết quả\" để thêm vào danh sách quy đổi (mỗi lần 1 môn)."
+  }
+};
+
+let currentMode = "hocba";
 let lastResults = {};
+let vsatScores = {}; // môn -> điểm V-SAT đã nhập (tích lũy từng môn một)
 let activeComboFilter = "ALL";
+
+function activeTables() { return MODE_CONFIG[currentMode].tables; }
+function getSubjectList() { return Object.keys(activeTables()); }
+
+function emptyStateHtml(msg) {
+  return `
+    <div class="empty">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      <span>${msg}</span>
+    </div>
+  `;
+}
 
 /* ===================== LOGIC QUY ĐỔI ===================== */
 function convertScoreDetailed(subject, x) {
   if (x === null || x === undefined || isNaN(x)) return null;
-  x = Math.max(0, Math.min(10, x));
-  const table = SUBJECT_TABLES[subject];
+  const table = activeTables()[subject];
+  if (!table) return null;
+  const maxV = MODE_CONFIG[currentMode].max;
+  x = Math.max(0, Math.min(maxV, x));
   let row = null;
   for (const r of table) {
-    if (x > r.a - 1e-9 && x <= r.b + 1e-9) { 
-      row = r; 
-      break; 
-    }
+    if (x > r.a - 1e-9 && x <= r.b + 1e-9) { row = r; break; }
   }
   if (!row && x <= 0) row = table[0];
   if (!row) return null;
@@ -1185,76 +846,147 @@ function convertScoreDetailed(subject, x) {
   return { x, y, a: row.a, b: row.b, c: row.c, d: row.d };
 }
 
+function switchMode(mode) {
+  currentMode = mode;
+  document.getElementById('btnModeHocba').classList.toggle('active', mode === 'hocba');
+  document.getElementById('btnModeVsat').classList.toggle('active', mode === 'vsat');
+
+  const cfg = MODE_CONFIG[mode];
+  document.getElementById('pageTitle').textContent = cfg.pageTitle;
+  document.getElementById('pageDesc').textContent = cfg.pageDesc;
+  document.getElementById('inputCardTitle').textContent = cfg.inputLabel;
+
+  const combosBtn = document.getElementById('tabBtnCombos');
+  const refBtn = document.getElementById('tabBtnReference');
+  if (mode === 'vsat') {
+    if (combosBtn) combosBtn.style.display = 'none';
+    if (refBtn) refBtn.style.display = 'none';
+    switchTab('tab-subjects');
+  } else {
+    if (combosBtn) combosBtn.style.display = '';
+    if (refBtn) refBtn.style.display = '';
+  }
+
+  lastResults = {};
+  buildInputs();
+  buildSubjectSelect();
+  renderReferenceTable();
+  loadSavedData();
+  renderCombos();
+}
+
 /* ===================== RENDER INPUTS ===================== */
 function buildInputs() {
   const grid = document.getElementById('subjectInputs');
-  grid.innerHTML = SUBJECT_LIST.map(subj => `
+
+  if (currentMode === 'hocba') {
+    grid.classList.remove('single-col');
+    const cfg = MODE_CONFIG.hocba;
+    grid.innerHTML = getSubjectList().map(subj => `
+      <div class="field">
+        <label for="inp_${subj}">${subj}</label>
+        <div class="input-wrapper">
+          <input type="number" id="inp_${subj}" min="0" max="${cfg.max}" step="${cfg.step}" placeholder="0" oninput="validateInput(this); autoCalculate();">
+        </div>
+      </div>
+    `).join('');
+    return;
+  }
+
+  // Chế độ V-SAT: chọn 1 môn + nhập 1 điểm mỗi lượt, kết quả tích lũy vào danh sách bên phải
+  grid.classList.add('single-col');
+  grid.innerHTML = `
     <div class="field">
-      <label for="inp_${subj}">${subj}</label>
+      <label for="vsatSubjectSelect">Chọn môn thi V-SAT</label>
       <div class="input-wrapper">
-        <input type="number" id="inp_${subj}" min="0" max="10" step="0.01" placeholder="0.00" oninput="validateInput(this); autoCalculate();">
+        <select id="vsatSubjectSelect" onchange="onVsatSubjectChange()" style="width:100%; background: rgba(7,4,20,0.8); border:1px solid rgba(255,255,255,0.1); color:#fff; padding:10px 12px; border-radius:8px; font-size:15px; outline:none; font-family:'JetBrains Mono', monospace; cursor:pointer;">
+          ${getSubjectList().map(s => `<option value="${s}">${s}</option>`).join('')}
+        </select>
       </div>
     </div>
-  `).join('');
+    <div class="field">
+      <label for="vsatScoreInput">Điểm thi V-SAT (thang 150)</label>
+      <div class="input-wrapper">
+        <input type="number" id="vsatScoreInput" min="0" max="150" step="0.5" placeholder="0" oninput="validateVsatScoreInput()">
+      </div>
+    </div>
+  `;
+  loadVsatInputValue();
+}
 
-  // Load from localStorage if present
-  loadSavedData();
+function onVsatSubjectChange() { loadVsatInputValue(); }
+
+function loadVsatInputValue() {
+  const sel = document.getElementById('vsatSubjectSelect');
+  const el = document.getElementById('vsatScoreInput');
+  if (!sel || !el) return;
+  const subj = sel.value;
+  el.value = (vsatScores[subj] !== undefined) ? vsatScores[subj] : '';
+}
+
+function validateVsatScoreInput() {
+  const el = document.getElementById('vsatScoreInput');
+  let val = parseFloat(el.value);
+  if (val > 150) el.value = 150;
+  if (val < 0) el.value = 0;
 }
 
 function validateInput(el) {
+  const maxV = MODE_CONFIG[currentMode].max;
   let val = parseFloat(el.value);
-  if (val > 10) el.value = 10;
+  if (val > maxV) el.value = maxV;
   if (val < 0) el.value = 0;
 }
 
 function fillDemo() {
-  const demo = {
-    "Toán": 8.25,
-    "Vật lí": 8.10,
-    "Hóa học": 7.80,
-    "Ngữ văn": 8.25,
-    "Tiếng Anh": 7.90,
-    "Sinh học": 8.00,
-    "Lịch sử": 8.40,
-    "Địa lí": 8.20,
-    "Tin học": 8.30,
-    "Công nghệ công nghiệp": 8.00,
-    "GDKT&PL": 8.10
-  };
-  SUBJECT_LIST.forEach(s => {
-    const el = document.getElementById('inp_' + s);
-    if (demo[s] !== undefined) el.value = demo[s];
-  });
-  calculateAll();
+  if (currentMode === 'hocba') {
+    const demoHocba = {
+      "Toán": 8.25, "Vật lí": 8.10, "Hóa học": 7.80, "Ngữ văn": 8.25, "Tiếng Anh": 7.90,
+      "Sinh học": 8.00, "Lịch sử": 8.40, "Địa lí": 8.20, "Tin học": 8.30,
+      "Công nghệ công nghiệp": 8.00, "GDKT&PL": 8.10
+    };
+    getSubjectList().forEach(s => {
+      const el = document.getElementById('inp_' + s);
+      if (el && demoHocba[s] !== undefined) el.value = demoHocba[s];
+    });
+    calculateAll();
+  } else {
+    const demoVsat = {
+      "Toán": 105, "Vật lí": 95, "Hóa học": 90, "Ngữ văn": 108, "Tiếng Anh": 98,
+      "Sinh học": 92, "Lịch sử": 100, "Địa lí": 94
+    };
+    vsatScores = { ...demoVsat };
+    localStorage.setItem(MODE_CONFIG.vsat.storageKey, JSON.stringify(vsatScores));
+    recomputeVsatResults();
+    loadVsatInputValue();
+    switchTab('tab-subjects');
+  }
 }
 
 function clearAll() {
-  SUBJECT_LIST.forEach(s => { 
-    document.getElementById('inp_' + s).value = ''; 
-  });
+  if (currentMode === 'hocba') {
+    getSubjectList().forEach(s => {
+      const el = document.getElementById('inp_' + s);
+      if (el) el.value = '';
+    });
+  } else {
+    vsatScores = {};
+    const el = document.getElementById('vsatScoreInput');
+    if (el) el.value = '';
+  }
   lastResults = {};
-  localStorage.removeItem('ctu_quydoi_scores');
-  
-  document.getElementById('subjectResults').innerHTML = `
-    <div class="empty">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      <span>Nhập điểm học bạ bên trái để xem kết quả quy đổi và biểu đồ chi tiết từng môn.</span>
-    </div>
-  `;
-  document.getElementById('comboResults').innerHTML = `
-    <div class="empty">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      <span>Hãy nhập đủ điểm tối thiểu 3 môn thuộc một tổ hợp để xem tổng điểm quy đổi xét tuyển.</span>
-    </div>
-  `;
+  localStorage.removeItem(MODE_CONFIG[currentMode].storageKey);
+  document.getElementById('subjectResults').innerHTML = emptyStateHtml(MODE_CONFIG[currentMode].emptyMsg);
+  document.getElementById('comboResults').innerHTML = emptyStateHtml('Hãy nhập đủ điểm tối thiểu 3 môn thuộc một tổ hợp để xem tổng điểm quy đổi xét tuyển.');
 }
 
 function autoCalculate() {
-  // Silent auto calculate on input changes to keep data fresh, but doesn't force view switches
   lastResults = {};
   const scoresObj = {};
-  SUBJECT_LIST.forEach(subj => {
-    const raw = document.getElementById('inp_' + subj).value;
+  getSubjectList().forEach(subj => {
+    const el = document.getElementById('inp_' + subj);
+    if (!el) return;
+    const raw = el.value;
     if (raw === '' || raw === null) return;
     const x = parseFloat(raw);
     if (isNaN(x)) return;
@@ -1262,101 +994,112 @@ function autoCalculate() {
     const detail = convertScoreDetailed(subj, x);
     if (detail) lastResults[subj] = detail;
   });
-  localStorage.setItem('ctu_quydoi_scores', JSON.stringify(scoresObj));
-  renderSubjectResults(true);
+  localStorage.setItem(MODE_CONFIG.hocba.storageKey, JSON.stringify(scoresObj));
+  renderSubjectResults();
+  renderCombos();
+}
+
+/* Thêm/ghi đè điểm 1 môn V-SAT vào danh sách tích lũy */
+function addVsatEntry() {
+  const subj = document.getElementById('vsatSubjectSelect').value;
+  const raw = document.getElementById('vsatScoreInput').value;
+  if (raw === '' || raw === null) return;
+  const x = parseFloat(raw);
+  if (isNaN(x)) return;
+  vsatScores[subj] = x;
+  localStorage.setItem(MODE_CONFIG.vsat.storageKey, JSON.stringify(vsatScores));
+  recomputeVsatResults();
+}
+
+function removeVsatEntry(subj) {
+  delete vsatScores[subj];
+  delete lastResults[subj];
+  localStorage.setItem(MODE_CONFIG.vsat.storageKey, JSON.stringify(vsatScores));
+  renderSubjectResults();
+  renderCombos();
+}
+
+function recomputeVsatResults() {
+  lastResults = {};
+  Object.entries(vsatScores).forEach(([subj, x]) => {
+    const d = convertScoreDetailed(subj, x);
+    if (d) lastResults[subj] = d;
+  });
+  renderSubjectResults();
   renderCombos();
 }
 
 function calculateAll() {
-  autoCalculate();
-  // Play subtle feedback animation/scroll if needed, or activate the results tab
+  if (currentMode === 'vsat') {
+    addVsatEntry();
+  } else {
+    autoCalculate();
+  }
   switchTab('tab-subjects');
 }
 
 function loadSavedData() {
-  try {
-    const saved = localStorage.getItem('ctu_quydoi_scores');
-    if (saved) {
-      const scores = JSON.parse(saved);
-      Object.entries(scores).forEach(([subj, val]) => {
-        const el = document.getElementById('inp_' + subj);
-        if (el) el.value = val;
-      });
-      autoCalculate();
+  if (currentMode === 'hocba') {
+    try {
+      const saved = localStorage.getItem(MODE_CONFIG.hocba.storageKey);
+      if (saved) {
+        const scores = JSON.parse(saved);
+        Object.entries(scores).forEach(([subj, val]) => {
+          const el = document.getElementById('inp_' + subj);
+          if (el) el.value = val;
+        });
+        autoCalculate();
+      } else {
+        renderSubjectResults();
+      }
+    } catch (e) {
+      console.error("Lỗi khi khôi phục dữ liệu đã lưu:", e);
     }
-  } catch (e) {
-    console.error("Lỗi khi khôi phục dữ liệu đã lưu:", e);
+  } else {
+    try {
+      const saved = localStorage.getItem(MODE_CONFIG.vsat.storageKey);
+      vsatScores = saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      vsatScores = {};
+    }
+    recomputeVsatResults();
+    loadVsatInputValue();
   }
 }
 
-function fmt(n) { 
-  return n.toFixed(2).replace('.', ','); 
+function fmt(n) {
+  return n.toFixed(2).replace('.', ',');
 }
 
 /* ===================== RENDER SUBJECT RESULTS ===================== */
-function renderSubjectResults(isAuto = false) {
+function renderSubjectResults() {
   const container = document.getElementById('subjectResults');
   const entries = Object.entries(lastResults);
-  
+  const xLabel = MODE_CONFIG[currentMode].xLabel;
+
   if (entries.length === 0) {
-    if (!isAuto) {
-      container.innerHTML = `
-        <div class="empty">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          <span>Chưa có môn nào được nhập điểm.</span>
-        </div>
-      `;
-    }
+    container.innerHTML = emptyStateHtml(MODE_CONFIG[currentMode].emptyMsg);
     return;
   }
 
   let cardsHtml = entries.map(([subj, d]) => {
-    const rangeLength = d.b - d.a;
-    const ratio = rangeLength === 0 ? 0 : ((d.x - d.a) / rangeLength) * 100;
-    
-    const formulaText = (d.b === d.a)
-      ? `y = c = ${fmt(d.c)}`
-      : `y = ${fmt(d.c)} + (${fmt(d.x)} − ${fmt(d.a)}) / (${fmt(d.b)} − ${fmt(d.a)}) × (${fmt(d.d)} − ${fmt(d.c)}) = <strong>${fmt(d.y)}</strong>`;
-
+    const removeBtn = currentMode === 'vsat'
+      ? `<button class="secondary" style="padding:6px 12px; font-size:12px; box-shadow:none; margin-left:4px;" onclick="removeVsatEntry('${subj}')">Xóa</button>`
+      : '';
     return `
-      <div class="field" style="margin-bottom: 16px; background: rgba(255,255,255,0.01); display: block; border-color: rgba(255,255,255,0.05);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-          <span style="font-weight: 700; color: #fff; font-size: 15px;">${subj}</span>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <span class="badge">Học bạ: ${fmt(d.x)}</span>
-            <span class="badge pink">Quy đổi: ${fmt(d.y)}</span>
-          </div>
-        </div>
-
-        <div class="step-formula" style="margin-bottom: 8px;">
-          <span>Phép nội suy: </span> ${formulaText}
-        </div>
-
-        <!-- Interpolation track slider visualization -->
-        <div class="interpolation-widget">
-          <div class="visual-labels">
-            <span>Mốc học bạ <strong>a = ${fmt(d.a)}</strong></span>
-            <span>Mốc học bạ <strong>b = ${fmt(d.b)}</strong></span>
-          </div>
-          
-          <div class="visual-line-container">
-            <div class="visual-track">
-              <div class="visual-interval" style="left: 0%; width: 100%;"></div>
-              <div class="visual-marker" style="left: ${ratio}%;" data-val="x = ${fmt(d.x)}"></div>
-            </div>
-          </div>
-
-          <div class="visual-labels">
-            <span>Mốc thi THPT <strong>c = ${fmt(d.c)}</strong></span>
-            <span>Mốc thi THPT <strong>d = ${fmt(d.d)}</strong></span>
-          </div>
+      <div class="field" style="margin-bottom: 12px; background: rgba(255,255,255,0.015); display: flex; flex-direction: row; align-items: center; justify-content: space-between; border-color: rgba(255,255,255,0.05); padding: 16px 18px; flex-wrap: wrap; gap: 8px;">
+        <span style="font-weight: 700; color: #fff; font-size: 15.5px;">${subj}</span>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <span class="badge" style="font-size: 13px;">${xLabel}: ${fmt(d.x)}</span>
+          <span class="score" style="font-size: 22px;">${fmt(d.y)}</span>
+          ${removeBtn}
         </div>
       </div>
     `;
   }).join('');
 
   container.innerHTML = `
-    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
+    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
       ${cardsHtml}
     </div>
   `;
@@ -1373,15 +1116,16 @@ function setComboFilter(filter, el) {
 function renderCombos() {
   const container = document.getElementById('comboResults');
   const query = (document.getElementById('comboSearch').value || '').trim().toUpperCase();
+  const subjectList = getSubjectList();
 
   const rows = [];
   for (const [code, subjects] of Object.entries(COMBOS)) {
+    // Ẩn tổ hợp có môn không tồn tại dữ liệu quy đổi ở chế độ hiện tại (VD: Tin học/CNCN/GDKT&PL chưa có bảng V-SAT)
+    if (!subjects.every(s => subjectList.includes(s))) continue;
+
     const label = subjects.join(', ');
-    
-    // Check Search Query
     if (query && !code.includes(query) && !label.toUpperCase().includes(query)) continue;
 
-    // Check Tabs Category Filter
     if (activeComboFilter !== 'ALL' && activeComboFilter !== 'COMPLETE') {
       if (!code.startsWith(activeComboFilter)) continue;
     }
@@ -1390,7 +1134,6 @@ function renderCombos() {
     const complete = scores.every(v => v !== null);
     const total = complete ? scores.reduce((a, b) => a + b, 0) : null;
 
-    // Filter "Đủ môn" (Complete) only
     if (activeComboFilter === 'COMPLETE' && !complete) continue;
 
     rows.push({ code, subjects, scores, complete, total });
@@ -1400,13 +1143,12 @@ function renderCombos() {
     container.innerHTML = `
       <div class="empty">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        <span>Không tìm thấy tổ hợp phù hợp.</span>
+        <span>Không tìm thấy tổ hợp phù hợp${currentMode === 'vsat' ? ' (một số tổ hợp cần môn chưa có dữ liệu quy đổi V-SAT)' : ''}.</span>
       </div>
     `;
     return;
   }
 
-  // Sort: completed combinations at the top, sorted by total descending
   rows.sort((a, b) => {
     if (a.complete && b.complete) return b.total - a.total;
     if (a.complete) return -1;
@@ -1465,16 +1207,19 @@ function renderCombos() {
 /* ===================== REFERENCE TABLE ===================== */
 function buildSubjectSelect() {
   const sel = document.getElementById('tableSubjectSelect');
-  sel.innerHTML = SUBJECT_LIST.map(s => `<option value="${s}">${s}</option>`).join('');
-  sel.value = "Toán";
+  const list = getSubjectList();
+  sel.innerHTML = list.map(s => `<option value="${s}">${s}</option>`).join('');
+  sel.value = list.includes("Toán") ? "Toán" : list[0];
 }
 
 function renderReferenceTable() {
   const subj = document.getElementById('tableSubjectSelect').value;
-  const table = SUBJECT_TABLES[subj];
+  const table = activeTables()[subj];
   const container = document.getElementById('referenceTable');
+  if (!table) { container.innerHTML = ''; return; }
   const rowsDesc = [...table].reverse();
-  
+  const xLabel = MODE_CONFIG[currentMode].xLabel;
+
   const rows = rowsDesc.map(r => {
     const range = r.a === 0 ? `x ≤ ${fmt(r.b)}` : `${fmt(r.a)} < x ≤ ${fmt(r.b)}`;
     const yrange = (r.c === r.d) ? `y = ${fmt(r.c)}` : `${fmt(r.c)} < y ≤ ${fmt(r.d)}`;
@@ -1491,7 +1236,7 @@ function renderReferenceTable() {
       <table>
         <thead>
           <tr>
-            <th>Khoảng điểm Học bạ (x)</th>
+            <th>Khoảng điểm ${xLabel} (x)</th>
             <th>Khoảng điểm thi THPT tương ứng (y)</th>
           </tr>
         </thead>
@@ -1505,27 +1250,18 @@ function renderReferenceTable() {
 
 /* ===================== TAB CONTROLLER ===================== */
 function switchTab(tabId) {
-  document.querySelectorAll('.tab-content').forEach(content => {
-    content.classList.remove('active');
-  });
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.classList.remove('active');
-  });
+  document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
 
   const targetTab = document.getElementById(tabId);
   if (targetTab) targetTab.classList.add('active');
 
-  const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => {
-    return btn.getAttribute('onclick').includes(tabId);
-  });
+  const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.getAttribute('onclick').includes(tabId));
   if (activeBtn) activeBtn.classList.add('active');
 }
 
 /* ===================== INITIALIZE ===================== */
-buildInputs();
-buildSubjectSelect();
-renderReferenceTable();
-autoCalculate();
+switchMode('hocba');
 </script>
 
 </body>
