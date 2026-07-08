@@ -239,6 +239,44 @@ export default function PhotosManager({ token }: PhotosManagerProps) {
     });
   };
 
+  // Compress base64 image if it is too large
+  const compressImage = (base64Str: string, maxWidth = 1600, maxHeight = 1600, quality = 0.75): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(base64Str);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressed);
+      };
+      img.onerror = () => {
+        resolve(base64Str);
+      };
+    });
+  };
+
   // Upload single photo flow
   const uploadSingleFile = async (staged: StagedFile) => {
     if (!token) return;
@@ -247,8 +285,16 @@ export default function PhotosManager({ token }: PhotosManagerProps) {
     setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: "uploading", progress: 20 } : f));
 
     try {
-      const base64String = await convertFileToBase64(staged.file);
-      setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, progress: 50 } : f));
+      let base64String = await convertFileToBase64(staged.file);
+      setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, progress: 40 } : f));
+
+      // Auto-compress images larger than 1MB to save space & bypass payload limits
+      if (staged.file.size > 1 * 1024 * 1024) {
+        setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, progress: 50, errorMessage: "Đang tối ưu dung lượng ảnh..." } : f));
+        base64String = await compressImage(base64String);
+      }
+
+      setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, progress: 65, errorMessage: undefined } : f));
 
       const tagsArray = staged.tags
         .split(",")
@@ -269,7 +315,30 @@ export default function PhotosManager({ token }: PhotosManagerProps) {
         })
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 413) {
+          throw new Error("Dung lượng ảnh quá lớn, vượt quá giới hạn của server (4.5MB).");
+        }
+        let errorMsg = "Lỗi hệ thống khi tải ảnh.";
+        try {
+          const text = await response.text();
+          try {
+            const errJson = JSON.parse(text);
+            errorMsg = errJson.message || errorMsg;
+          } catch {
+            errorMsg = text.substring(0, 100) || errorMsg;
+          }
+        } catch {}
+        throw new Error(errorMsg);
+      }
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonErr) {
+        throw new Error("Phản hồi từ server không hợp lệ (không phải JSON).");
+      }
+
       if (data.success) {
         setStagedFiles(prev => prev.map(f => f.id === staged.id ? { ...f, status: "success", progress: 100 } : f));
         showToast("success", `Đã upload thành công: ${staged.title}`);

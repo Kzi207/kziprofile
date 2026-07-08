@@ -212,6 +212,43 @@ export default function AdminDashboard({
     }
   };
 
+  const compressImage = (base64Str: string, maxWidth = 1600, maxHeight = 1600, quality = 0.75): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(base64Str);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressed);
+      };
+      img.onerror = () => {
+        resolve(base64Str);
+      };
+    });
+  };
+
   // Base64 file uploader wrapper helper
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, targetField: string) => {
     const file = e.target.files?.[0];
@@ -219,8 +256,12 @@ export default function AdminDashboard({
 
     const reader = new FileReader();
     reader.onloadend = async () => {
-      const base64String = reader.result as string;
+      let base64String = reader.result as string;
       try {
+        if (file.size > 1 * 1024 * 1024) {
+          base64String = await compressImage(base64String);
+        }
+
         const res = await fetch("/api/upload", {
           method: "POST",
           headers: {
@@ -229,7 +270,34 @@ export default function AdminDashboard({
           },
           body: JSON.stringify({ base64: base64String })
         });
-        const uploadData = await res.json();
+
+        if (!res.ok) {
+          if (res.status === 413) {
+            showToast("error", "Dung lượng ảnh quá lớn, vượt quá giới hạn của server (4.5MB).");
+            return;
+          }
+          let errorMsg = "Không thể tải ảnh lên.";
+          try {
+            const text = await res.text();
+            try {
+              const errJson = JSON.parse(text);
+              errorMsg = errJson.message || errorMsg;
+            } catch {
+              errorMsg = text.substring(0, 100) || errorMsg;
+            }
+          } catch {}
+          showToast("error", errorMsg);
+          return;
+        }
+
+        let uploadData;
+        try {
+          uploadData = await res.json();
+        } catch {
+          showToast("error", "Phản hồi từ server không hợp lệ.");
+          return;
+        }
+
         if (uploadData.success) {
           if (editingItem) {
             setEditingItem((prev: any) => ({ ...prev, [targetField]: uploadData.data }));
@@ -240,9 +308,11 @@ export default function AdminDashboard({
             }
           }
           showToast("success", "Đã tải ảnh lên máy chủ Neon!");
+        } else {
+          showToast("error", uploadData.message || "Tải ảnh thất bại.");
         }
-      } catch (err) {
-        showToast("error", "Không thể tải ảnh lên.");
+      } catch (err: any) {
+        showToast("error", `Không thể tải ảnh lên: ${err.message}`);
       }
     };
     reader.readAsDataURL(file);
