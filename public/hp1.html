@@ -3,362 +3,1530 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ôn Tập Trắc Nghiệm Quốc Phòng - An Ninh</title>
+    <title>📘 Trắc nghiệm học bài - Đầy đủ câu hỏi</title>
     <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f7f6;
-            color: #333;
-            margin: 0;
+            background: #f0f4f8;
             padding: 20px;
-            line-height: 1.6;
         }
         .container {
             max-width: 900px;
-            margin: 20px auto;
+            margin: 0 auto;
             background: #fff;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            padding: 25px 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
         }
         h1 {
-            text-align: center;
-            color: #0056b3;
-            margin-bottom: 20px;
-        }
-        .toolbar {
+            font-size: 26px;
+            border-bottom: 3px solid #2c3e50;
+            padding-bottom: 12px;
+            margin-bottom: 25px;
+            color: #1a2a3a;
             display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
             justify-content: space-between;
-            margin-bottom: 30px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #eee;
+            align-items: center;
+            flex-wrap: wrap;
         }
         .controls {
             display: flex;
-            gap: 10px;
             flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 25px;
+            background: #e9edf2;
+            padding: 15px 20px;
+            border-radius: 12px;
+            align-items: center;
         }
-        input[type="text"], select {
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 16px;
-            outline: none;
-        }
-        input[type="text"]:focus, select:focus {
-            border-color: #0056b3;
-        }
-        .toggle-btn {
-            padding: 10px 20px;
-            background: #dc3545;
-            color: white;
+        .controls button {
+            padding: 8px 18px;
             border: none;
-            border-radius: 5px;
+            border-radius: 30px;
+            background: #2c3e50;
+            color: white;
+            font-weight: 600;
             cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            transition: background 0.3s;
+            transition: 0.2s;
+            font-size: 14px;
         }
-        .toggle-btn.active {
-            background: #28a745;
+        .controls button:hover {
+            background: #1a2a3a;
+            transform: scale(0.97);
         }
-        .toggle-btn:hover {
-            opacity: 0.9;
+        .controls .btn-show {
+            background: #27ae60;
         }
-        .question-box {
-            margin-bottom: 20px;
-            padding: 15px;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            background: #fafafa;
+        .controls .btn-show:hover {
+            background: #1e8449;
+        }
+        .controls .btn-hide {
+            background: #e67e22;
+        }
+        .controls .btn-hide:hover {
+            background: #ca6f1e;
+        }
+        .controls .stats {
+            margin-left: auto;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        .question-card {
+            background: #fafcff;
+            border-radius: 14px;
+            padding: 18px 22px 22px 22px;
+            margin-bottom: 22px;
+            border-left: 6px solid #3498db;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.04);
+            transition: 0.15s;
+        }
+        .question-card.correct {
+            border-left-color: #27ae60;
+            background: #f0fff4;
+        }
+        .question-card.wrong {
+            border-left-color: #e74c3c;
+            background: #fff5f5;
+        }
+        .question-number {
+            font-weight: 700;
+            font-size: 18px;
+            color: #2c3e50;
+            margin-bottom: 8px;
         }
         .question-text {
-            font-weight: bold;
-            margin-bottom: 15px;
-            font-size: 16px;
+            font-size: 17px;
+            line-height: 1.5;
+            margin-bottom: 14px;
+            font-weight: 500;
         }
-        .options label {
-            display: block;
-            margin: 8px 0;
-            padding: 10px;
-            border-radius: 5px;
+        .options {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-left: 6px;
+        }
+        .option {
+            padding: 10px 16px;
+            background: #ffffff;
+            border: 2px solid #dce3ed;
+            border-radius: 10px;
             cursor: pointer;
-            border: 1px solid transparent;
-            transition: all 0.2s;
+            transition: 0.15s;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        .options label:hover {
-            background-color: #e9f5ff;
-            border-color: #b3d7ff;
+        .option:hover {
+            background: #f2f6fc;
+            border-color: #a0b8d4;
         }
-        .options input {
-            margin-right: 10px;
-            transform: scale(1.2);
+        .option.selected {
+            border-color: #2c3e50;
+            background: #eef3fa;
         }
-        /* ĐÁP ÁN ĐÚNG MÀU ĐỎ IN ĐẬM */
-        .show-answer .options .correct {
-            color: #d32f2f;
-            font-weight: bold;
-            background-color: #ffebee;
-            border: 1px solid #ef9a9a;
+        .option.correct-answer {
+            border-color: #27ae60;
+            background: #d5f5e3;
         }
-        
-        /* TRẠNG THÁI KHI CHẤM BÀI */
-        .options .user-correct {
-            background-color: #d4edda !important;
-            border: 1px solid #c3e6cb !important;
-            color: #155724;
-            font-weight: bold;
+        .option.wrong-answer {
+            border-color: #e74c3c;
+            background: #fadbd8;
         }
-        .options .user-wrong {
-            background-color: #f8d7da !important;
-            border: 1px solid #f5c6cb !important;
-            color: #721c24;
-            font-weight: bold;
+        .option.reveal-correct {
+            border-color: #27ae60;
+            background: #d5f5e3;
         }
-        .submit-btn {
-            display: block;
-            width: 100%;
-            padding: 15px;
-            background: #0056b3;
-            color: white;
-            border: none;
+        .answer-feedback {
+            margin-top: 12px;
+            font-weight: 600;
+            font-size: 15px;
+            padding: 8px 14px;
             border-radius: 8px;
-            font-size: 18px;
-            font-weight: bold;
-            cursor: pointer;
-            margin-top: 20px;
+            display: inline-block;
         }
-        .submit-btn:hover {
-            background: #004494;
+        .answer-feedback.correct {
+            color: #1e8449;
+            background: #d5f5e3;
         }
-        #result {
-            display: none;
+        .answer-feedback.wrong {
+            color: #922b21;
+            background: #fadbd8;
+        }
+        .answer-feedback.show-answer {
+            color: #1a2a3a;
+            background: #fef9e7;
+            border: 1px solid #f1c40f;
+        }
+        .correct-label {
+            color: #c0392b;
+            font-weight: 700;
+            margin-left: 12px;
+            font-size: 14px;
+        }
+        .footer {
             text-align: center;
-            font-size: 20px;
-            font-weight: bold;
-            margin: 20px 0;
-            padding: 15px;
-            border-radius: 8px;
-            background: #e9ecef;
+            margin-top: 30px;
+            color: #7f8c8d;
+            font-size: 14px;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        @media (max-width: 600px) {
+            .container { padding: 15px; }
+            .question-card { padding: 14px; }
+            .controls { flex-direction: column; align-items: stretch; }
+            .controls .stats { margin-left: 0; text-align: center; }
         }
     </style>
 </head>
 <body>
-
-<div class="container">
-    <h1>📚 ÔN TẬP TRẮC NGHIỆM QUỐC PHÒNG - AN NINH</h1>
-    
-    <div class="toolbar">
-        <div class="controls">
-            <input type="text" id="searchBox" placeholder="🔍 Tìm kiếm câu hỏi...">
-            <select id="categoryFilter">
-                <option value="all">Tất cả chuyên đề</option>
-            </select>
-        </div>
-        <button class="toggle-btn" id="toggleAnswerBtn" onclick="toggleAnswers()">Bật hiển thị đáp án (Đỏ)</button>
+<div class="container" id="app">
+    <h1>
+        <span>📖 Trắc nghiệm ôn tập</span>
+        <span style="font-size:16px; font-weight:400;">Tổng: <span id="totalCount">0</span> câu</span>
+    </h1>
+    <div class="controls">
+        <button class="btn-show" onclick="showAllAnswers()">✅ Hiện đáp án đúng</button>
+        <button class="btn-hide" onclick="hideAllAnswers()">🔒 Ẩn đáp án</button>
+        <button onclick="resetSelection()">🔄 Làm lại</button>
+        <span class="stats" id="stats">Đã chọn: 0 / 0</span>
     </div>
-
-    <div id="result"></div>
-    <form id="quizForm"></form>
-    <button class="submit-btn" onclick="checkAnswers()">NỘP BÀI & CHẤM ĐIỂM</button>
+    <div id="questionsContainer"></div>
+    <div class="footer">
+        ⚡ Đáp án đúng được tô <span style="color:#c0392b; font-weight:700;">màu đỏ</span> và ghi chú bên dưới.
+    </div>
 </div>
-
 <script>
-    // Ngân hàng câu hỏi (Đã thêm đáp án sai để tạo thành trắc nghiệm)
-    const quizData = [
-        // --- BIÊN GIỚI LÃNH THỔ ---
-        {cat: "Biên giới", q: "Lãnh thổ quốc gia Việt Nam bao gồm:", options: ["Vùng đất, vùng biển, vùng trời ngoài ra còn có lãnh thổ quốc gia đặc biệt", "Vùng đất và vùng biển", "Vùng trời và vùng đất", "Vùng biển và hải đảo"], correct: 0},
-        {cat: "Biên giới", q: "Lãnh hải là vùng biển có chiều rộng bao nhiêu hải lí?", options: ["24 hải lý", "12 hải lý", "200 hải lý", "3 hải lý"], correct: 1},
-        {cat: "Biên giới", q: "Vùng tiếp giáp lãnh hải rộng bao nhiêu hải lý?", options: ["12 hải lý", "24 hải lý", "48 hải lý", "200 hải lý"], correct: 1},
-        {cat: "Biên giới", q: "Lực lượng nào làm nòng cốt, chuyên trách trong quản lý, bảo vệ biên giới quốc gia trên đất liền?", options: ["Công an Nhân dân", "Bộ đội Biên phòng", "Dân quân tự vệ", "Hải quân"], correct: 1},
-        {cat: "Biên giới", q: "Biên giới quốc gia trên biển cách đường cơ sở bao nhiêu hải lí?", options: ["12 hải lý", "24 hải lý", "200 hải lý", "3 hải lý"], correct: 0},
-        {cat: "Biên giới", q: "Xây dựng và bảo vệ chủ quyền lãnh thổ, biên giới quốc gia là sự nghiệp của:", options: ["Lực lượng vũ trang", "Bộ đội Biên phòng", "Toàn dân", "Chính phủ"], correct: 2},
+    // -------------------------------------------------------------
+    // 📌 DỮ LIỆU CÂU HỎI (được trích xuất từ file của bạn)
+    // -------------------------------------------------------------
+    const questions = [
+        // ===== AN TOÀN THÔNG TIN, KHÔNG GIAN MẠNG =====
+        {
+            id: 1,
+            question: "An ninh mạng là:",
+            options: [
+                "A. Sự bảo đảm hoạt động trên không gian mạng không gây phương hại đến an ninh quốc gia, trật tự an toàn xã hội, quyền và lợi ích hợp pháp của cơ quan, tổ chức, cá nhân.",
+                "B. Sự bảo đảm hoạt động trên không gian mạng gây phương hại đến an ninh quốc gia, trật tự an toàn xã hội, quyền và lợi ích hợp pháp của cơ quan, tổ chức, cá nhân.",
+                "C. Sự bảo đảm hoạt động trên không gian mạng không gây phương hại đến an ninh quốc gia, an toàn xã hội và cơ quan, tổ chức, cá nhân.",
+                "D. Sự bảo đảm hoạt động một cách liên tục, thông suốt trên không gian mạng gây phương hại đến an ninh quốc gia, trật tự an toàn xã hội, quyền và lợi ích hợp pháp của cơ quan, tổ chức, cá nhân."
+            ],
+            answer: 0
+        },
+        {
+            id: 2,
+            question: "Không gian mạng là:",
+            options: [
+                "A. Mạng lưới kết nối của cơ sở hạ tầng công nghệ thông tin, bao gồm mạng viễn thông, mạng internet, mạng máy tính, hệ thống thông tin, hệ thống xử lý và điều khiển thông tin, cơ sở dữ liệu; là nơi con người thực hiện các hành vi xã hội không bị giới hạn bởi không gian và thời gian.",
+                "B. Bao gồm mạng viễn thông, mạng internet, mạng máy tính, hệ thống thông tin, hệ thống xử lý và điều khiển thông tin.",
+                "C. Là nơi con người thực hiện các hành vi xã hội bị giới hạn bởi không gian và thời gian.",
+                "D. Mạng lưới kết nối của cơ sở hạ tầng công nghệ thông tin, là nơi con người thực hiện các hành vi xã hội bị giới hạn bởi không gian và thời gian."
+            ],
+            answer: 0
+        },
+        {
+            id: 3,
+            question: "Tội phạm mạng là:",
+            options: [
+                "A. Hành vi sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để thực hiện tội phạm.",
+                "B. Hành vi sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để thực hiện tội phạm được quy định tại Bộ luật hình sự.",
+                "C. Hành vi sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để thực hiện tội phạm để trục lợi.",
+                "D. Hành vi sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để thực hiện tội phạm được quy định tại Bộ luật dân sự."
+            ],
+            answer: 1
+        },
+        {
+            id: 4,
+            question: "Tấn công mạng là:",
+            options: [
+                "A. Hành vi sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để phá hoại gây gián đoạn hoạt động của mạng viễn thông, internet, máy tính, hệ thống thông tin, hệ thống xử lý và điều khiển thông tin, cơ sở dữ liệu, phương tiện điện tử.",
+                "B. Hành vi sử dụng công nghệ thông tin hoặc phương tiện điện tử để phá hoại gây gián đoạn hoạt động của mạng viễn thông, internet, máy tính, hệ thống thông tin, hệ thống xử lý và điều khiển thông tin, cơ sở dữ liệu, phương tiện điện tử.",
+                "C. Hành vi phá hoại gây gián đoạn hoạt động của mạng viễn thông, internet, máy tính, hệ thống thông tin, hệ thống xử lý và điều khiển thông tin, cơ sở dữ liệu, phương tiện điện tử.",
+                "D. Hành vi sử dụng không gian mạng, công nghệ thông tin để khai thác hoặc phá hoại gây gián đoạn hoạt động của mạng viễn thông, internet, máy tính, hệ thống thông tin, hệ thống xử lý và điều khiển thông tin, cơ sở dữ liệu, phương tiện điện tử."
+            ],
+            answer: 0
+        },
+        {
+            id: 5,
+            question: "Hành vi bị nghiêm cấm về an ninh mạng:",
+            options: [
+                "A. Tổ chức hoạt động cấu kết, xúi giục, mua chuộc, lừa gạt, lôi kéo, đào tạo, huấn luyện người chống Nhà nước CHXHCN Việt Nam.",
+                "B. Thực hiện chương trình, dự án hợp tác quốc tế về an ninh mạng.",
+                "C. Ký và thực hiện điều ước quốc tế, thỏa thuận quốc tế về an ninh mạng.",
+                "D. Tổ chức đào tạo, phát triển và sử dụng nhân lực an ninh mạng."
+            ],
+            answer: 0
+        },
+        {
+            id: 6,
+            question: "Thông tin sai sự thật gây hoang mang trong nhân dân, gây thiệt hại cho hoạt động kinh tế - xã hội, gây khó khăn cho hoạt động của cơ quan Nhà nước hoặc người thi hành công vụ, xâm phạm quyền và lợi ích hợp pháp của cơ quan, tổ chức, cá nhân khác. Là:",
+            options: [
+                "A. Hành vi bị nghiêm cấm vi phạm pháp luật trên không gian mạng.",
+                "B. Hành vi không bị nghiêm cấm vi phạm pháp luật trên không gian mạng.",
+                "C. Được khuyến khích về sử dụng không gian mạng.",
+                "D. Bị hạn chế một phần về sử dụng không gian mạng."
+            ],
+            answer: 0
+        },
+        {
+            id: 7,
+            question: "Sử dụng không gian mạng để thực hiện hành vi nào sau đây bị pháp luật nghiêm cấm về an ninh mạng?",
+            options: [
+                "A. Xuyên tạc lịch sử, phủ nhận thành tựu cách mạng, phá hoại khối đại đoàn kết toàn dân tộc, xúc phạm tôn giáo, phân biệt đối xử về giới, phân biệt chủng tộc.",
+                "B. Tuyên truyền, phổ biến, giáo dục các quy định của pháp luật về quản lý không gian mạng.",
+                "C. Nâng cao ý thức phòng tránh, tự vệ và sử dụng biện pháp kỹ thuật để khắc phục hậu quả trong trường hợp bị tấn công trên không gian mạng.",
+                "D. Bồi dưỡng kỹ năng nhận diện các âm mưu, thủ đoạn tấn công mạng và các hình thái phát sinh trên không gian mạng."
+            ],
+            answer: 0
+        },
+        {
+            id: 8,
+            question: "Đặc điểm của an toàn thông tin:",
+            options: [
+                "A. Tính bí mật, tính toàn vẹn.",
+                "B. Tính toàn vẹn, tính sẵn sàng, tính khả dụng của thông tin.",
+                "C. Tính sẵn sàng, tính toàn vẹn, tính tiện ích.",
+                "D. Tính bí mật, tính toàn vẹn, tính sẵn sàng."
+            ],
+            answer: 3
+        },
+        {
+            id: 9,
+            question: "Sự bảo vệ thông tin, hệ thống thông tin trên mạng, tránh bị truy nhập, sử dụng tiết lộ, gián đoạn, sửa đổi hoặc phá hoại trái phép nhằm bảo đảm tính nguyên vẹn, tính bảo mật và tính khả dụng của thông tin. Được xác định là:",
+            options: [
+                "A. Khái niệm an toàn thông tin mạng.",
+                "B. Khái niệm an ninh mạng.",
+                "C. Khái niệm không gian mạng.",
+                "D. Khái niệm không gian mạng quốc gia."
+            ],
+            answer: 0
+        },
+        {
+            id: 10,
+            question: "Giáo dục nâng cao nhận thức về bảo vệ chủ quyền quốc gia, các lợi ích và sự nguy hại đến từ không gian mạng. Được xác định là:",
+            options: [
+                "A. Một trong những nội dung phòng chống vi phạm pháp luật trên không gian mạng.",
+                "B. Một trong những giải pháp phòng chống vi phạm pháp luật trên không gian mạng.",
+                "C. Một trong những đặc điểm phòng, chống vi phạm pháp luật trên không gian mạng.",
+                "D. Một trong những hành vi bị nghiêm cấm vi phạm pháp luật trên không gian mạng."
+            ],
+            answer: 1
+        },
+        {
+            id: 11,
+            question: "Các hành vi bị nghiêm cấm về an ninh mạng, được quy định tại:",
+            options: [
+                "A. Điều 7, Luật An ninh mạng.",
+                "B. Điều 8, Luật An ninh mạng.",
+                "C. Điều 9, Luật An ninh mạng.",
+                "D. Điều 10, Luật An ninh mạng."
+            ],
+            answer: 1
+        },
+        {
+            id: 12,
+            question: "Chọn đáp án đúng nhất: Bảo vệ an ninh mạng là:",
+            options: [
+                "A. Phòng ngừa, phát hiện, ngăn chặn, xử lý hành vi xâm phạm an ninh mạng.",
+                "B. Phát hiện, ngăn chặn, đấu tranh, xử lý hành vi xâm phạm an ninh mạng.",
+                "C. Dò tìm, cảnh báo, phát hiện, ngăn chặn, đấu tranh, xử lý hành vi xâm phạm an ninh mạng.",
+                "D. Sử dụng biện pháp nghiệp vụ để phát hiện, ngăn chặn, xử lý hành vi xâm phạm an ninh mạng."
+            ],
+            answer: 0
+        },
+        {
+            id: 13,
+            question: "Tuyên truyền, phổ biến giáo dục các quy định của pháp luật về quản lý không gian mạng. Được hiểu là một trong những:",
+            options: [
+                "A. Biện pháp phòng, chống vi phạm pháp luật trên không gian mạng.",
+                "B. Hành vi bị nghiêm cấm vi phạm pháp luật trên không gian mạng.",
+                "C. Nội dung phòng, chống vi phạm pháp luật trên không gian mạng.",
+                "D. Đặc điểm của an toàn thông tin mạng."
+            ],
+            answer: 0
+        },
+        {
+            id: 14,
+            question: "Nội dung nào dưới đây là khái niệm của khủng bố mạng?",
+            options: [
+                "A. Là việc sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để xuyên tạc lịch sử.",
+                "B. Là việc sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để thực hiện hành vi khủng bố, tài trợ khủng bố.",
+                "C. Là việc sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để chống phá Đảng và Nhà nước.",
+                "D. Là việc sử dụng không gian mạng, công nghệ thông tin hoặc phương tiện điện tử để xâm phạm bí mật nhà nước, bí mật công tác."
+            ],
+            answer: 1
+        },
+        {
+            id: 15,
+            question: "Đăng tải, phát tán thông tin trên không gian mạng có nội dung tuyên truyền chống Nhà nước Cộng hòa xã hội chủ nghĩa Việt Nam được quy định tại:",
+            options: [
+                "A. Khoản 1, điều 16 Luật An ninh mạng.",
+                "B. Khoản 1, điều 17 Luật An ninh mạng.",
+                "C. Khoản 1, điều 18 Luật An ninh mạng.",
+                "D. Khoản 1, điều 19 Luật An ninh mạng."
+            ],
+            answer: 0
+        },
+        {
+            id: 16,
+            question: "Khoản 1 điều 16, Luật An ninh mạng quy định hành vi nào bị cấm dưới đây có nội dung tuyên truyền chống Nhà nước Cộng hòa xã hội chủ nghĩa Việt Nam?",
+            options: [
+                "A. Chiến tranh tâm lý, kích động chiến tranh xâm lược, chia rẽ, gây thù hận giữa các dân tộc và nhân dân các nước.",
+                "B. Kêu gọi, vận động, xúi giục, đe dọa, gây chia rẽ, tiến hành hoạt động vũ trang hoặc dùng bạo lực nhằm chống chính quyền nhân dân.",
+                "C. Kêu gọi, vận động, xúi giục, đe dọa, lôi kéo tụ tập đông người gây rối.",
+                "D. Kêu gọi, vận động, xúi giục, đe dọa, lôi kéo tụ tập đông người gây rối, chống người thi hành công vụ, gây mất ổn định về an ninh, trật tự."
+            ],
+            answer: 1
+        },
+        {
+            id: 17,
+            question: "Hành vi nào bị cấm dưới đây có nội dung kích động gây bạo loạn, phá rối an ninh, gây rối trật tự công cộng?",
+            options: [
+                "A. Tuyên truyền xuyên tạc, phỉ báng chính quyền nhân dân.",
+                "B. Chiến tranh tâm lý, kích động chiến tranh xâm lược, chia rẽ, gây thù hận giữa các dân tộc, tôn giáo và nhân dân các nước.",
+                "C. Xúc phạm dân tộc, quốc kỳ, quốc ca, vĩ nhân, lãnh tụ, danh nhân, anh hùng dân tộc.",
+                "D. Kêu gọi, vận động, xúi giục, gây chia rẽ, tiến hành hoạt động vũ trang hoặc bạo lực nhằm chống chính quyền nhân dân."
+            ],
+            answer: 3
+        },
+        {
+            id: 18,
+            question: "Điều 101 Nghị định 15/2020/NĐ-CP vi phạm các quy tắc về trách nhiệm sử dụng mạng xã hội cung cấp, chia sẻ thông tin giả mạo, thông tin sai sự thật, vu khống, xúc phạm uy tín của cơ quan, tổ chức, danh dự, nhân phẩm của cá nhân ... sẽ bị phạt:",
+            options: [
+                "A. Từ 7 triệu đồng đến 10 triệu đồng.",
+                "B. Từ 10 triệu đồng đến 20 triệu đồng.",
+                "C. Từ 20 triệu đồng đến 30 triệu đồng.",
+                "D. Từ 30 triệu đồng đến 40 triệu đồng."
+            ],
+            answer: 1
+        },
 
-        // --- AN TOÀN THÔNG TIN, KHÔNG GIAN MẠNG ---
-        {cat: "An ninh mạng", q: "An ninh mạng là sự bảo đảm hoạt động trên không gian mạng như thế nào?", options: ["Gây phương hại đến an ninh quốc gia", "Không gây phương hại đến an ninh quốc gia, trật tự an toàn xã hội...", "Giới hạn bởi không gian và thời gian", "Chỉ phục vụ mục đích kinh tế"], correct: 1},
-        {cat: "An ninh mạng", q: "Tội phạm mạng là hành vi sử dụng không gian mạng để thực hiện tội phạm được quy định tại?", options: ["Bộ luật dân sự", "Bộ luật hành chính", "Bộ luật hình sự", "Luật An ninh mạng"], correct: 2},
-        {cat: "An ninh mạng", q: "Đặc điểm của an toàn thông tin bao gồm những tính chất nào?", options: ["Tính bí mật, tính toàn vẹn, tính sẵn sàng", "Tính bí mật, tính công khai, tính sẵn sàng", "Tính toàn vẹn, tính tiện ích, tính bí mật", "Tính sẵn sàng, tính phổ biến, tính toàn vẹn"], correct: 0},
-        {cat: "An ninh mạng", q: "Các hành vi bị nghiêm cấm về an ninh mạng được quy định tại điều nào Luật An ninh mạng?", options: ["Điều 5", "Điều 6", "Điều 7", "Điều 8"], correct: 2},
-        {cat: "An ninh mạng", q: "Thông tin sai sự thật gây hoang mang trong nhân dân là hành vi như thế nào?", options: ["Được khuyến khích", "Không bị nghiêm cấm", "Bị hạn chế một phần", "Bị nghiêm cấm vi phạm pháp luật trên không gian mạng"], correct: 3},
+        // ===== DIỄN BIẾN HÒA BÌNH =====
+        {
+            id: 19,
+            question: "Chiến lược diễn biến hòa bình được tiến hành bằng:",
+            options: [
+                "A. Biện pháp phi quân sự do chủ nghĩa đế quốc và các thế lực phản động tiến hành.",
+                "B. Biện pháp quân sự do chủ nghĩa đế quốc và các thế lực phản động tiến hành.",
+                "C. Biện pháp kinh tế do chủ nghĩa đế quốc và các thế lực phản động tiến hành.",
+                "D. Biện pháp vũ trang do chủ nghĩa đế quốc và các thế lực phản động tiến hành."
+            ],
+            answer: 0
+        },
+        {
+            id: 20,
+            question: "Là chiến lược cơ bản nhằm lật đổ chế độ chính trị của các nước tiến bộ, trước hết là các nước xã hội chủ nghĩa từ bên trong bằng biện pháp phi quân sự. Được hiểu là:",
+            options: [
+                "A. Khái niệm của chiến lược diễn biến hòa bình.",
+                "B. Thủ đoạn của chiến lược diễn biến hòa bình.",
+                "C. Mục đích của chiến lược diễn biến hòa bình.",
+                "D. Âm mưu của chiến lược diễn biến hòa bình."
+            ],
+            answer: 0
+        },
+        {
+            id: 21,
+            question: "Ngày 11 tháng 7 năm 1995, Mỹ tuyên bố nội dung gì với Việt Nam?",
+            options: [
+                "A. Xóa bỏ cấm vận kinh tế với Việt Nam.",
+                "B. Xóa bỏ cấm vận quân sự với Việt Nam.",
+                "C. Bình thường hóa quan hệ ngoại giao với Việt Nam.",
+                "D. Xóa bỏ cấm vận vũ khí sát thương với Việt Nam."
+            ],
+            answer: 2
+        },
+        {
+            id: 22,
+            question: "Tháng 12/1957, Tổng thống Aixenhao đã tuyên bố nội dung gì trong chiến lược diễn biến hòa bình?",
+            options: [
+                "A. Mỹ sẽ giành thắng lợi bằng hòa bình.",
+                "B. Mỹ phát triển mạnh về khoa học kỹ thuật.",
+                "C. Mỹ làm bá chủ thế giới.",
+                "D. Mỹ cho người lên sống mặt trăng."
+            ],
+            answer: 0
+        },
+        {
+            id: 23,
+            question: "Bình thường hóa quan hệ ngoại giao với Việt Nam được Mỹ tuyên bố vào ngày:",
+            options: [
+                "A. 11/7/1995.",
+                "B. 7/11/1995.",
+                "C. 25/8/1995.",
+                "D. 11/7/1985."
+            ],
+            answer: 0
+        },
+        {
+            id: 24,
+            question: "\"Xóa bỏ vai trò lãnh đạo của Đảng, xóa bỏ chế độ xã hội chủ nghĩa, lái nước ta đi theo con đường tư bản và lệ thuộc vào chủ nghĩa đế quốc\". Được xác định là:",
+            options: [
+                "A. Mục tiêu nhất quán chiến lược diễn biến hòa bình đối với Việt Nam.",
+                "B. Biện pháp nhất quán chiến lược diễn biến hòa bình đối với Việt Nam.",
+                "C. Thủ đoạn nhất quán chiến lược diễn biến hòa bình đối với Việt Nam.",
+                "D. Nhiệm vụ nhất quán chiến lược diễn biến hòa bình đối với Việt Nam."
+            ],
+            answer: 0
+        },
+        {
+            id: 25,
+            question: "Khích lệ thành phần kinh tế tư nhân phát triển, từng bước làm mất vai trò chủ đạo của thành phần kinh tế Nhà nước, là một trong những nội dung âm mưu thủ đoạn chống phá của chiến lược diễn biến hòa bình về:",
+            options: [
+                "A. Kinh tế.",
+                "B. Chính trị.",
+                "C. Dân tộc.",
+                "D. Tôn giáo."
+            ],
+            answer: 0
+        },
+        {
+            id: 26,
+            question: "Xóa bỏ chủ nghĩa Mác - Lênin, tư tưởng Hồ Chí Minh. Là một trong những thủ đoạn chống phá của chiến lược diễn biến hòa bình về:",
+            options: [
+                "A. Chính trị - kinh tế.",
+                "B. Tư tưởng - văn hóa.",
+                "C. Dân tộc - tôn giáo.",
+                "D. Quốc phòng - an ninh."
+            ],
+            answer: 1
+        },
+        {
+            id: 27,
+            question: "Hạn chế sự mở rộng quan hệ hợp tác của Việt Nam đối với các nước lớn trên thế giới, tìm cách ngăn cản những dự án đầu tư quốc tế vào Việt Nam là một trong những thủ đoạn chống phá của chiến lược diễn biến hòa bình về lĩnh vực:",
+            options: [
+                "A. Đối ngoại.",
+                "B. Dân tộc.",
+                "C. Quân sự.",
+                "D. Chính trị."
+            ],
+            answer: 0
+        },
+        {
+            id: 28,
+            question: "Lợi dụng những khó khăn ở vùng đồng bào dân tộc ít người, những tồn tại do lịch sử để lại, trình độ dân trí của một bộ phận đồng bào còn thấp và những khuyết điểm trong thực hiện các chính sách dân tộc, tôn giáo của một bộ phận cán bộ để kích động tư tưởng đòi ly khai, tự quyết dân tộc. Là thủ đoạn chống phá của chiến lược diễn biến hòa bình về lĩnh vực:",
+            options: [
+                "A. Chính trị - kinh tế.",
+                "B. Tư tưởng - văn hóa.",
+                "C. Quốc phòng - an ninh.",
+                "D. Dân tộc - tôn giáo."
+            ],
+            answer: 3
+        },
+        {
+            id: 29,
+            question: "Một trong những giải pháp phòng chống chiến lược 'diễn biến hòa bình' là:",
+            options: [
+                "A. Xây dựng cơ sở chính trị - xã hội vững mạnh về mọi mặt.",
+                "B. Bảo vệ sự nghiệp đổi mới và lợi ích quốc gia dân tộc.",
+                "C. Chủ động khôn khéo xử lý tình huống khi bạo loạn xảy ra.",
+                "D. Tranh thủ sự ủng hộ của nhân dân trong nước và quốc tế."
+            ],
+            answer: 0
+        },
+        {
+            id: 30,
+            question: "Chọn câu sai: 'Diễn biến hòa bình' là chiến lược cơ bản nhằm:",
+            options: [
+                "A. Lật đổ chế độ chính trị của các nước tiến bộ.",
+                "B. Xóa bỏ các nước chủ nghĩa xã hội từ bên trong.",
+                "C. Lật đổ chế độ chính trị của các nước tư bản từ bên trong.",
+                "D. Lật đổ chế độ chính trị của các nước xã hội chủ nghĩa từ bên trong."
+            ],
+            answer: 2
+        },
+        {
+            id: 31,
+            question: "'Việc bình thường hóa quan hệ của chúng ta với Việt Nam không phải là kết thúc nỗ lực của chúng ta. Chúng ta tiếp tục phấn đấu cho đến khi chúng ta có được những câu trả lời mà chúng ta có thể có ...'. Là phát biểu của Tổng thống Mỹ nào?",
+            options: [
+                "A. Bill Clinton.",
+                "B. G. Bush.",
+                "C. Nixon.",
+                "D. Giôn Xơn."
+            ],
+            answer: 0
+        },
+        {
+            id: 32,
+            question: "Ai là người khởi xướng chiến lược diễn biến hòa bình của chủ nghĩa đế quốc?",
+            options: [
+                "A. Kennan.",
+                "B. Mác San.",
+                "C. Truman.",
+                "D. Aixenhao."
+            ],
+            answer: 0
+        },
+        {
+            id: 33,
+            question: "Lợi dụng xu thế hợp tác để du nhập những sản phẩm văn hóa đồi trụy, lối sống phương Tây. Được xác định là thủ đoạn chống phá trên lĩnh vực nào của chủ nghĩa đế quốc?",
+            options: [
+                "A. Chống phá chính trị trong chiến lược diễn biến hòa bình.",
+                "B. Chống phá tư tưởng văn hóa trong chiến lược diễn biến hòa bình.",
+                "C. Chống phá tôn giáo dân tộc trong chiến lược diễn biến hòa bình.",
+                "D. Chống phá quốc phòng an ninh trong chiến lược diễn biến hòa bình."
+            ],
+            answer: 1
+        },
+        {
+            id: 34,
+            question: "Xây dựng tiềm lực vững mạnh của đất nước, tranh thủ sự ủng hộ của nhân dân trong nước và quốc tế, kịp thời làm thất bại âm mưu, thủ đoạn chống phá của kẻ thù đối với Việt Nam. Được xác định là:",
+            options: [
+                "A. Quan điểm chỉ đạo phòng chống chiến lược diễn biến hòa bình.",
+                "B. Nhiệm vụ phòng chống chiến lược diễn biến hòa bình.",
+                "C. Phương châm tiến hành phòng chống chiến lược diễn biến hòa bình.",
+                "D. Mục tiêu phòng chống chiến lược diễn biến hòa bình."
+            ],
+            answer: 0
+        },
+        {
+            id: 35,
+            question: "Chủ động, kiên quyết khôn khéo xử trí linh hoạt các tình huống và giải quyết hậu quả kịp thời khi có bạo loạn xảy ra, giải quyết các vụ gây rối, không để phát triển thành bạo loạn. Được xác định là:",
+            options: [
+                "A. Quan điểm chỉ đạo phòng chống bạo loạn lật đổ.",
+                "B. Nhiệm vụ phòng chống bạo loạn lật đổ.",
+                "C. Phương châm tiến hành phòng chống bạo loạn lật đổ.",
+                "D. Mục tiêu phòng chống bạo loạn lật đổ."
+            ],
+            answer: 0
+        },
+        {
+            id: 36,
+            question: "'Chống phá chính trị làm hàng đầu, kinh tế là mũi nhọn, ngoại giao làm hậu thuẫn, dân tộc, tôn giáo làm ngòi nổ'. Được xác định là:",
+            options: [
+                "A. Thủ đoạn chống phá của chiến lược diễn biến hòa bình.",
+                "B. Quan điểm chống phá của chiến lược diễn biến hòa bình.",
+                "C. Nội dung chống phá của chiến lược diễn biến hòa bình.",
+                "D. Đặc điểm chống phá của chiến lược diễn biến hòa bình."
+            ],
+            answer: 0
+        },
+        {
+            id: 37,
+            question: "Là hành động chống phá bằng bạo lực có tổ chức do lực lượng phản động hay lực lượng ly khai, đối lập trong nước hoặc cấu kết với nước ngoài tiến hành nhằm gây rối loạn an ninh chính trị, trật tự, an toàn xã hội hoặc lật đổ chính quyền ở địa phương hay Trung ương. Được xác định là:",
+            options: [
+                "A. Khái niệm bạo loạn lật đổ.",
+                "B. Khái niệm diễn biến hòa bình.",
+                "C. Khái niệm gây rối.",
+                "D. Khái niệm an ninh quốc gia."
+            ],
+            answer: 0
+        },
 
-        // --- DIỄN BIẾN HÒA BÌNH ---
-        {cat: "Diễn biến hòa bình", q: "Chiến lược diễn biến hòa bình được tiến hành bằng biện pháp nào?", options: ["Biện pháp quân sự", "Biện pháp vũ trang", "Biện pháp phi quân sự", "Biện pháp ngoại giao"], correct: 2},
-        {cat: "Diễn biến hòa bình", q: "Ai là người khởi xướng chiến lược diễn biến hòa bình của chủ nghĩa đế quốc?", options: ["Aixenhao", "Kennan", "Truman", "Mác San"], correct: 1},
-        {cat: "Diễn biến hòa bình", q: "Mục tiêu nhất quán của chiến lược diễn biến hòa bình đối với Việt Nam là gì?", options: ["Xóa bỏ vai trò lãnh đạo của Đảng, xóa bỏ chế độ XHCN", "Phát triển kinh tế thị trường", "Giúp đỡ Việt Nam hiện đại hóa", "Hợp tác quốc phòng"], correct: 0},
-        {cat: "Diễn biến hòa bình", q: "Khái niệm 'Bạo loạn lật đổ' là hành động chống phá bằng:", options: ["Biện pháp hòa bình", "Bạo lực có tổ chức nhằm gây rối loạn an ninh hoặc lật đổ chính quyền", "Biện pháp kinh tế", "Tuyên truyền trên mạng"], correct: 1},
+        // ===== AN TOÀN GIAO THÔNG =====
+        {
+            id: 38,
+            question: "'Một bộ phận của hệ thống pháp luật hành chính Nhà nước, bao gồm hệ thống các văn bản quy phạm pháp luật do Nhà nước ban hành, nhằm điều chỉnh các quan hệ xã hội phát sinh trong quá trình tổ chức, thực hiện các hoạt động chấp hành và điều hành các cơ quan xử lý nhà nước, tổ chức xã hội và công dân trên lĩnh vực bảo đảm trật tự, an toàn giao thông' là khái niệm:",
+            options: [
+                "A. Pháp luật bảo đảm về trật tự an toàn giao thông.",
+                "B. Vi phạm pháp luật bảo đảm an toàn giao thông.",
+                "C. Phòng ngừa vi phạm pháp luật về đảm bảo trật tự an toàn giao thông.",
+                "D. Phòng chống vi phạm pháp luật về đảm bảo trật tự an toàn giao thông."
+            ],
+            answer: 0
+        },
+        {
+            id: 39,
+            question: "'Hoạt động của các cơ quan Nhà nước, các tổ chức xã hội và công dân bằng nhiều hình thức, biện pháp hướng đến việc triệt tiêu các nguyên nhân, điều kiện của vi phạm pháp luật về đảm bảo trật tự, an toàn giao thông nhằm ngăn chặn, hạn chế làm giảm và từng bước loại trừ vi phạm pháp luật về bảo đảm trật tự, an toàn giao thông ra khỏi đời sống xã hội' là khái niệm:",
+            options: [
+                "A. Pháp luật bảo đảm về trật tự an toàn giao thông.",
+                "B. Vi phạm pháp luật bảo đảm an toàn giao thông.",
+                "C. Phòng ngừa vi phạm pháp luật về đảm bảo trật tự an toàn giao thông.",
+                "D. Phòng chống vi phạm pháp luật về đảm bảo trật tự an toàn giao thông."
+            ],
+            answer: 2
+        },
+        {
+            id: 40,
+            question: "'Hoạt động của các cơ quan quản lý Nhà nước có thẩm quyền căn cứ vào các quy định của pháp luật, tiến hành tổng hợp các biện pháp theo quy định để chủ động nắm tình hình, phát hiện những hành vi vi phạm pháp luật về bảo đảm trật tự, an toàn giao thông do cá nhân, tổ chức thực hiện, từ đó áp dụng các biện pháp xử lý tương ứng với mức độ của các hành vi vi phạm đó, góp phần đảm bảo trật tự an toàn giao thông' là khái niệm:",
+            options: [
+                "A. Pháp luật bảo đảm về trật tự an toàn giao thông.",
+                "B. Vi phạm pháp luật bảo đảm an toàn giao thông.",
+                "C. Phòng ngừa vi phạm pháp luật về đảm bảo trật tự an toàn giao thông.",
+                "D. Đấu tranh chống vi phạm pháp luật về đảm bảo trật tự, an toàn giao thông."
+            ],
+            answer: 3
+        },
+        {
+            id: 41,
+            question: "Ý chí của Nhà nước để chỉ đạo và tổ chức thực hiện về bảo đảm trật tự, an toàn giao thông. Được xác định là một trong những:",
+            options: [
+                "A. Khái niệm pháp luật về bảo đảm trật tự an toàn giao thông.",
+                "B. Nội dung pháp luật về bảo đảm trật tự an toàn giao thông.",
+                "C. Vai trò pháp luật về bảo đảm trật tự, an toàn giao thông.",
+                "D. Đặc điểm của pháp luật về bảo đảm trật tự an toàn giao thông."
+            ],
+            answer: 2
+        },
+        {
+            id: 42,
+            question: "Các loại văn bản quy phạm pháp luật về bảo đảm trật tự, an toàn giao thông do cơ quan nào ban hành? Chọn phương án đúng nhất.",
+            options: [
+                "A. Do Quốc hội, Chính phủ, các Bộ, cơ quan hành chính từ Trung ương đến địa phương ban hành có liên quan đến bảo đảm trật tự, an toàn giao thông.",
+                "B. Do Chính phủ, các Bộ, cơ quan hành chính từ Trung ương đến địa phương ban hành có liên quan đến bảo đảm trật tự, an toàn giao thông.",
+                "C. Do các Bộ, cơ quan hành chính từ Trung ương đến địa phương ban hành có liên quan đến bảo đảm trật tự, an toàn giao thông.",
+                "D. Do cơ quan hành chính từ Trung ương đến địa phương ban hành có liên quan đến bảo đảm trật tự, an toàn giao thông."
+            ],
+            answer: 0
+        },
+        {
+            id: 43,
+            question: "Hành vi vi phạm quy định của pháp luật về bảo đảm trật tự, an toàn giao thông mà không phải là tội phạm. Được xác định là:",
+            options: [
+                "A. Vi phạm hình sự.",
+                "B. Vi phạm hành chính.",
+                "C. Nguyên nhân vi phạm.",
+                "D. Dấu hiệu của vi phạm."
+            ],
+            answer: 1
+        },
+        {
+            id: 44,
+            question: "Thường xuyên tuyên truyền, giáo dục, hướng dẫn về pháp luật phòng chống vi phạm bảo đảm trật tự, an toàn giao thông. Được xác định là:",
+            options: [
+                "A. Trách nhiệm của nhà trường trong phòng, chống vi phạm pháp luật về bảo đảm trật tự an toàn giao thông.",
+                "B. Trách nhiệm của thầy cô, sinh viên trong phòng chống vi phạm pháp luật về bảo đảm trật tự an toàn giao thông.",
+                "C. Biện pháp phòng chống vi phạm pháp luật về bảo đảm trật tự, an toàn giao thông.",
+                "D. Biện pháp phòng, chống vi phạm pháp luật về bảo đảm trật tự, an toàn xã hội."
+            ],
+            answer: 2
+        },
+        {
+            id: 45,
+            question: "Người điều khiển, người ngồi trên xe đạp máy phải đội mũ bảo hiểm cài quai đúng quy định được quy định tại:",
+            options: [
+                "A. Khoản 2, Điều 31, Luật giao thông đường bộ 2008.",
+                "B. Khoản 3, Điều 31, Luật giao thông đường bộ 2008.",
+                "C. Khoản 4, Điều 31, Luật giao thông đường bộ 2008.",
+                "D. Khoản 5, Điều 31, Luật giao thông đường bộ 2008."
+            ],
+            answer: 0
+        },
+        {
+            id: 46,
+            question: "Trong đô thị, trường hợp nào dưới đây sẽ không được dùng còi (trừ các xe ưu tiên theo Luật định)?",
+            options: [
+                "A. Khi qua nơi đông người tụ hợp đi lại trên đường.",
+                "B. Khi qua nơi có trường học trẻ em đi lại trên đường.",
+                "C. Từ 22h đến 5h sáng hôm sau.",
+                "D. Khi qua ngã ba, ngã tư, trong thành phố, thị xã, thị trấn đông người."
+            ],
+            answer: 2
+        },
+        {
+            id: 47,
+            question: "Người điều khiển xe mô tô, xe gắn máy lưu thông trên đường sử dụng điện thoại di động thì bị phạt như thế nào theo Nghị định 100/2019/NĐ-CP?",
+            options: [
+                "A. Phạt tiền từ 600.000 đồng đến 1.000.000 đồng.",
+                "B. Phạt tiền từ 2.000.000 đồng đến 3.000.000 đồng.",
+                "C. Phạt tiền từ 1.000.000 đồng đến 2.000.000 đồng.",
+                "D. Phạt tiền từ 2.000.000 đồng đến 4.000.000 đồng."
+            ],
+            answer: 0
+        },
+        {
+            id: 48,
+            question: "Điểm b, Khoản 1, Điều 6, Nghị định 100/2019/NĐ-CP xử phạt người điều khiển xe mô tô, xe gắn máy vi phạm quy tắc giao thông đường bộ, phạt tiền từ 100.000 đồng đến 200.000 đồng đối với hành vi nào?",
+            options: [
+                "A. Chở theo từ 3 người trở lên trên xe.",
+                "B. Không có báo hiệu xin vượt trước khi vượt.",
+                "C. Dừng xe đỗ trên cầu.",
+                "D. Vượt bên phải trong trường hợp không được phép."
+            ],
+            answer: 1
+        },
+        {
+            id: 49,
+            question: "Điểm c, Khoản 2, Điều 6, Nghị định 100/2019/NĐ-CP xử phạt người điều khiển xe mô tô, xe gắn máy vi phạm quy tắc giao thông đường bộ, phạt tiền từ 200.000 đồng đến 300.000 đồng đối với hành vi:",
+            options: [
+                "A. Chở theo từ 3 người trở lên trên xe.",
+                "B. Không có báo hiệu xin vượt trước khi vượt.",
+                "C. Điều khiển xe chạy quá tốc độ quy định từ 05 km/h đến dưới 10 km/h.",
+                "D. Vượt bên phải trong trường hợp không được phép."
+            ],
+            answer: 2
+        },
+        {
+            id: 50,
+            question: "Điểm b, Khoản 3, Điều 6, Nghị định 100/2019/NĐ-CP xử phạt người điều khiển xe mô tô, xe gắn máy vi phạm quy tắc giao thông đường bộ, phạt tiền từ 400.000 đồng đến 600.000 đồng đối với hành vi:",
+            options: [
+                "A. Chở theo từ 3 người trở lên trên xe.",
+                "B. Không có báo hiệu xin vượt trước khi vượt.",
+                "C. Điều khiển xe chạy quá tốc độ quy định từ 05 km/h đến dưới 10 km/h.",
+                "D. Điều khiển xe chạy dàn hàng ngang từ 03 xe trở lên."
+            ],
+            answer: 0
+        },
 
-        // --- TỘI PHẠM DANH DỰ, NHÂN PHẨM ---
-        {cat: "Danh dự nhân phẩm", q: "Mọi người có quyền bất khả xâm phạm về thân thể được quy định tại đâu?", options: ["Khoản 1, Điều 20, Hiến pháp 2013", "Khoản 1, Điều 21, Hiến pháp 2013", "Khoản 1, Điều 22, Hiến pháp 2013", "Khoản 1, Điều 24, Hiến pháp 2013"], correct: 1},
-        {cat: "Danh dự nhân phẩm", q: "Tội hiếp dâm, cưỡng dâm được hiểu là nhóm tội gì?", options: ["Tội xâm phạm tình dục", "Tội mua bán người", "Tội làm nhục người khác", "Tội xâm phạm sức khỏe"], correct: 0},
-        {cat: "Danh dự nhân phẩm", q: "Khi có hành vi xâm phạm danh dự xảy ra trong trường lớp, sinh viên cần làm gì?", options: ["Gọi người thân đến hành hung", "Xử lý nội bộ", "Đăng tải chia sẻ lên mạng xã hội", "Kịp thời cung cấp thông tin cho cơ quan chức năng"], correct: 3},
+        // ===== BẢO VỆ MÔI TRƯỜNG =====
+        {
+            id: 51,
+            question: "'Môi trường bao gồm các yếu tố vật chất tự nhiên và nhân tạo quan hệ mật thiết với nhau, bao quanh con người, có ảnh hưởng đến đời sống, kinh tế, xã hội, sự tồn tại, phát triển của con người, sinh vật và tự nhiên'. Được xác định là:",
+            options: [
+                "A. Khái niệm Luật bảo vệ môi trường năm 2014.",
+                "B. Khái niệm Luật bảo vệ môi trường năm 2018.",
+                "C. Khái niệm Luật bảo vệ môi trường năm 2020.",
+                "D. Khái niệm Luật bảo vệ môi trường năm 2022."
+            ],
+            answer: 2
+        },
+        {
+            id: 52,
+            question: "Tại Điều 43, Hiến pháp năm 2013 quy định:",
+            options: [
+                "A. Mọi người có quyền được sống trong môi trường trong lành và có nghĩa vụ bảo vệ môi trường.",
+                "B. Mọi người có quyền được sống trong môi trường ổn định và có nghĩa vụ bảo vệ môi trường.",
+                "C. Mọi người có quyền được sống trong môi trường trong lành và có quyền phát triển các tài năng của mình.",
+                "D. Mọi người có quyền được sống, quyền mưu cầu hạnh phúc và phát triển tài năng của mình."
+            ],
+            answer: 0
+        },
+        {
+            id: 53,
+            question: "Tại Khoản 1, Điều 4, Luật bảo vệ môi trường 2020 quy định:",
+            options: [
+                "A. Bảo vệ môi trường là quyền, nghĩa vụ và trách nhiệm của mọi cơ quan, tổ chức, cộng đồng dân cư, hộ gia đình và cá nhân.",
+                "B. Bảo vệ môi trường là nghĩa vụ của cơ quan, tổ chức, cá nhân và hộ gia đình.",
+                "C. Bảo vệ môi trường là nghĩa vụ của cơ quan, tổ chức, cá nhân và hộ gia đình.",
+                "D. Bảo vệ môi trường là sự nghiệp của toàn dân, các cơ quan chức năng là lực lượng nòng cốt."
+            ],
+            answer: 0
+        },
+        {
+            id: 54,
+            question: "Chủ thể cá nhân của tội phạm về môi trường được hiểu là:",
+            options: [
+                "A. Bất kỳ hành vi nào xâm phạm đến các yếu tố môi trường.",
+                "B. Bất kỳ thế lực nào tác động đến các thành phần của môi trường.",
+                "C. Bất kỳ người nào có đủ năng lực trách nhiệm hình sự và đạt độ tuổi theo quy định của Bộ luật Hình sự.",
+                "D. Bất kỳ âm mưu hoạt động nào tác động đến các yếu tố môi trường."
+            ],
+            answer: 2
+        },
+        {
+            id: 55,
+            question: "Một số cơ quan nhà nước có thẩm quyền ban hành nhiều chính sách ưu đãi để phát triển kinh tế mà chưa quan tâm đúng mức đến bảo vệ môi trường được xác định là một trong những:",
+            options: [
+                "A. Nguyên nhân, điều kiện khách quan.",
+                "B. Nguyên nhân, điều kiện chủ quan.",
+                "C. Nguyên nhân, điều kiện khách thể.",
+                "D. Nguyên nhân, điều kiện chủ thể."
+            ],
+            answer: 1
+        },
+        {
+            id: 56,
+            question: "Môi trường cung cấp tài nguyên thiên nhiên cần thiết cho cuộc sống và các hoạt động kinh tế của con người được xác định là:",
+            options: [
+                "A. Khái niệm môi trường.",
+                "B. Nội dung môi trường.",
+                "C. Vai trò của môi trường.",
+                "D. Biện pháp bảo vệ môi trường."
+            ],
+            answer: 2
+        },
+        {
+            id: 57,
+            question: "Theo Luật bảo vệ môi trường năm 2020, khái niệm 'ứng phó với biến đổi khí hậu' được xác định:",
+            options: [
+                "A. Là các hoạt động của con người nhằm thích ứng với biến đổi khí hậu.",
+                "B. Là các hoạt động của con người nhằm hạn chế tác động xấu đến môi trường.",
+                "C. Là các hoạt động của con người nhằm giảm thiểu biến đổi khí hậu.",
+                "D. Là hoạt động của con người nhằm thích ứng với biến đổi khí hậu và giảm nhẹ phát thải khí nhà kính."
+            ],
+            answer: 3
+        },
 
-        // --- AN TOÀN GIAO THÔNG ---
-        {cat: "An toàn giao thông", q: "Người điều khiển xe mô tô sử dụng điện thoại di động bị phạt bao nhiêu (NĐ 100)?", options: ["100.000 - 200.000đ", "400.000 - 600.000đ", "1.000.000 - 2.000.000đ", "2.000.000 - 3.000.000đ"], correct: 2},
-        {cat: "An toàn giao thông", q: "Chở theo từ 3 người trở lên trên xe máy bị phạt bao nhiêu?", options: ["100.000 - 200.000đ", "200.000 - 300.000đ", "400.000 - 600.000đ", "600.000 - 1.000.000đ"], correct: 2},
-        {cat: "An toàn giao thông", q: "Nồng độ cồn quá 80mlg/100ml máu bị phạt bao nhiêu?", options: ["2 - 3 triệu", "4 - 5 triệu", "6 - 8 triệu", "8 - 10 triệu"], correct: 2},
+        // ===== AN NINH PHI TRUYỀN THỐNG =====
+        {
+            id: 58,
+            question: "'An ninh phi truyền thống bao gồm nhiều lĩnh vực khác nhau liên quan đến an ninh quốc gia và khó đối phó hay giải quyết đơn phương bằng biện pháp quân sự'. Được xác định là:",
+            options: [
+                "A. Một trong những khái niệm an ninh phi truyền thống.",
+                "B. Một trong những đặc điểm an ninh phi truyền thống.",
+                "C. Một trong những nội dung an ninh phi truyền thống.",
+                "D. Một trong những giải pháp an ninh phi truyền thống."
+            ],
+            answer: 0
+        },
+        {
+            id: 59,
+            question: "Một trong những đặc điểm của an ninh phi truyền thống là:",
+            options: [
+                "A. Các vấn đề an ninh phi truyền thống đều mang tính xuyên quốc gia thậm chí là xuyên khu vực.",
+                "B. Nhiều vấn đề an ninh phi truyền thống là hậu quả trực tiếp của các vấn đề an ninh truyền thống.",
+                "C. An ninh phi truyền thống có thể tác động sâu sắc đến quốc phòng của đất nước.",
+                "D. An ninh phi truyền thống có thể tác động sâu sắc đến kinh tế xã hội của đất nước."
+            ],
+            answer: 0
+        },
+        {
+            id: 60,
+            question: "Một trong những mối quan hệ an ninh phi truyền thống với an ninh truyền thống là:",
+            options: [
+                "A. Các vấn đề an ninh phi truyền thống ảnh hưởng và hủy hoại an ninh quốc gia dần dần và lâu dài hơn so với các vấn đề an ninh truyền thống.",
+                "B. An ninh phi truyền thống làm suy giảm sức mạnh quốc phòng của đất nước.",
+                "C. Một số vấn đề an ninh phi truyền thống cũng có thể gây ra mâu thuẫn và xung đột trong an ninh truyền thống.",
+                "D. An ninh phi truyền thống gây mất ổn định của quốc gia."
+            ],
+            answer: 2
+        },
+        {
+            id: 61,
+            question: "'Một số vấn đề an ninh truyền thống có thể phát triển thành các vấn đề an ninh phi truyền thống'. Được xác định là một trong những:",
+            options: [
+                "A. Khái niệm an ninh phi truyền thống.",
+                "B. Mối quan hệ an ninh phi truyền thống.",
+                "C. Nội dung an ninh phi truyền thống.",
+                "D. Tác động an ninh phi truyền thống."
+            ],
+            answer: 1
+        },
+        {
+            id: 62,
+            question: "Sự an toàn của trạng thái hệ thống môi trường lành mạnh, đáp ứng điều kiện sống, sản xuất của con người, đảm bảo sự phát triển của quốc gia. Được xác định là:",
+            options: [
+                "A. Khái niệm an ninh môi trường.",
+                "B. Đặc điểm an ninh môi trường.",
+                "C. Nội dung an ninh môi trường.",
+                "D. Tác động an ninh môi trường."
+            ],
+            answer: 0
+        },
+        {
+            id: 63,
+            question: "'Tăng cường tiềm lực quốc gia, xây dựng nền tảng kinh tế - xã hội vững chắc, tập trung giải quyết các mâu thuẫn, xung đột xã hội'. Được xác định là một trong những:",
+            options: [
+                "A. Khái niệm an ninh phi truyền thống.",
+                "B. Giải pháp phòng chống an ninh phi truyền thống.",
+                "C. Nội dung phòng chống an ninh phi truyền thống.",
+                "D. Tác động an ninh phi truyền thống."
+            ],
+            answer: 1
+        },
+        {
+            id: 64,
+            question: "Một trong những giải pháp phòng chống an ninh phi truyền thống là:",
+            options: [
+                "A. Tăng cường công tác giáo dục nâng cao ý thức, trách nhiệm về bảo vệ chủ quyền lãnh thổ quốc gia.",
+                "B. Tăng cường tiềm lực quốc gia, xây dựng nền tảng kinh tế - xã hội vững chắc, tập trung giải quyết các mâu thuẫn, xung đột xã hội.",
+                "C. Nâng cao nhận thức về âm mưu, thủ đoạn của các thế lực thù địch, nắm chắc mọi diễn biến không để bị động bất ngờ.",
+                "D. Bồi dưỡng kỹ năng nhận diện các âm mưu, thủ đoạn tấn công mạng và các hình thái phát sinh trên không gian mạng."
+            ],
+            answer: 1
+        },
 
-        // --- BẢO VỆ MÔI TRƯỜNG ---
-        {cat: "Môi trường", q: "Khái niệm 'Môi trường bao gồm các yếu tố vật chất tự nhiên và nhân tạo...' thuộc Luật nào?", options: ["Luật BVMT 2014", "Luật BVMT 2018", "Luật BVMT 2020", "Luật BVMT 2022"], correct: 2},
-        {cat: "Môi trường", q: "Điều 43 Hiến pháp 2013 quy định mọi người có quyền gì?", options: ["Sống trong môi trường ổn định", "Sống trong môi trường trong lành và có nghĩa vụ bảo vệ môi trường", "Sống trong môi trường phát triển kinh tế", "Sống trong môi trường không thay đổi"], correct: 1},
-        {cat: "Môi trường", q: "Trách nhiệm của sinh viên đối với môi trường là gì?", options: ["Xây dựng CLB môi trường, thu gom xử lí chất thải", "Chỉ cần học tập lý thuyết", "Phê phán chính sách nhà nước", "Bỏ qua các vấn đề môi trường nhỏ"], correct: 0},
+        // ===== DÂN TỘC - TÔN GIÁO =====
+        {
+            id: 65,
+            question: "Cộng đồng người ổn định, hình thành trong lịch sử tạo lập một quốc gia trên cơ sở cộng đồng bền vững về: lãnh thổ quốc gia, kinh tế, ngôn ngữ, truyền thống văn hóa, đặc điểm tâm lý ý thức dân tộc và tên gọi của dân tộc. Được xác định là:",
+            options: [
+                "A. Khái niệm dân tộc.",
+                "B. Đặc điểm dân tộc.",
+                "C. Nguồn gốc dân tộc.",
+                "D. Tính chất dân tộc."
+            ],
+            answer: 0
+        },
+        {
+            id: 66,
+            question: "'Các dân tộc hoàn toàn bình đẳng, không phân biệt lớn, nhỏ, trình độ phát triển cao hay thấp đều có quyền lợi và nghĩa vụ ngang nhau trên mọi lĩnh vực'. Là quan điểm của ai?",
+            options: [
+                "A. V.I. Lênin.",
+                "B. C. Mác.",
+                "C. Ph. Ăngghen.",
+                "D. Hồ Chí Minh."
+            ],
+            answer: 0
+        },
+        {
+            id: 67,
+            question: "Một trong những đặc trưng của các dân tộc Việt Nam là:",
+            options: [
+                "A. Có truyền thống đoàn kết gắn bó xây dựng quốc gia dân tộc thống nhất.",
+                "B. Có quy mô dân số và trình độ phát triển cao.",
+                "C. Có trình độ văn hóa phát triển kém bền vững.",
+                "D. Các dân tộc có dân số và trình độ phát triển đồng đều."
+            ],
+            answer: 0
+        },
+        {
+            id: 68,
+            question: "Một trong những đặc trưng của các dân tộc thiểu số ở Việt Nam là:",
+            options: [
+                "A. Cư trú tập trung ở nông thôn.",
+                "B. Cư trú phân tán và xen kẽ trên địa bàn rộng lớn, chủ yếu là miền núi và biên giới.",
+                "C. Cư trú tập trung trên địa bàn hẹp.",
+                "D. Cư trú chủ yếu ở đồng bằng và trung du."
+            ],
+            answer: 1
+        },
+        {
+            id: 69,
+            question: "Một trong những đặc trưng của các dân tộc ở Việt Nam là:",
+            options: [
+                "A. Có quy mô dân số và trình độ phát triển không đều.",
+                "B. Có quy mô dân số và trình độ phát triển bền vững.",
+                "C. Có quy mô dân số và trình độ phát triển ngang bằng nhau.",
+                "D. Có quy mô dân số và trình độ phát triển vượt bậc."
+            ],
+            answer: 0
+        },
+        {
+            id: 70,
+            question: "Xây dựng, củng cố khối đại đoàn kết dân tộc và đoàn kết quốc tế của dân tộc Việt Nam là một trong những nội dung về vấn đề dân tộc và giải quyết vấn đề dân tộc của:",
+            options: [
+                "A. V.I. Lênin.",
+                "B. C. Mác.",
+                "C. Ph. Ăngghen.",
+                "D. Hồ Chí Minh."
+            ],
+            answer: 3
+        },
+        {
+            id: 71,
+            question: "Một hình thái ý thức xã hội, phản ánh hiện thực khách quan, theo quan niệm hoang đường ảo tưởng, phù hợp với tâm lý, hành vi của con người. Được xác định là:",
+            options: [
+                "A. Khái niệm tôn giáo theo chủ nghĩa Mác - Lênin.",
+                "B. Nguồn gốc tôn giáo theo chủ nghĩa Mác - Lênin.",
+                "C. Tính chất tôn giáo theo chủ nghĩa Mác - Lênin.",
+                "D. Đặc điểm tôn giáo theo chủ nghĩa Mác - Lênin."
+            ],
+            answer: 0
+        },
+        {
+            id: 72,
+            question: "Nguồn gốc của tôn giáo bao gồm:",
+            options: [
+                "A. Kinh tế - xã hội; nhận thức, tâm lý.",
+                "B. Kinh tế - xã hội; văn hóa; quân sự.",
+                "C. Kinh tế - xã hội; lịch sử, tâm lý.",
+                "D. Nhận thức, tâm lý, lịch sử."
+            ],
+            answer: 0
+        },
+        {
+            id: 73,
+            question: "Tính chất của tôn giáo gồm:",
+            options: [
+                "A. Tính lịch sử, tính quần chúng, tính chính trị.",
+                "B. Tính khoa học, tính lịch sử, tính chính trị.",
+                "C. Tính dân tộc; tính lịch sử, tính chính trị.",
+                "D. Tính lịch sử, tính chính trị; tính cách mạng."
+            ],
+            answer: 0
+        },
+        {
+            id: 74,
+            question: "'Phát huy các nhân tố tích cực, nhân văn trong các tôn giáo, tín ngưỡng. Phê phán và ngăn chặn các biểu hiện tiêu cực, mê tín, dị đoan'. Được xác định trong văn kiện:",
+            options: [
+                "A. Đại hội đại biểu Đảng toàn quốc lần thứ X.",
+                "B. Đại hội đại biểu Đảng toàn quốc lần thứ XI.",
+                "C. Đại hội đại biểu Đảng toàn quốc lần thứ XII.",
+                "D. Đại hội đại biểu Đảng toàn quốc lần thứ XIII."
+            ],
+            answer: 3
+        },
+        {
+            id: 75,
+            question: "Theo quan điểm chủ nghĩa Mác - Lênin, một trong những chức năng của tôn giáo là:",
+            options: [
+                "A. Mối liên hệ giữa thần thánh và con người.",
+                "B. Đền bù hư ảo.",
+                "C. Sự sáng tạo trong nỗi cô đơn của con người.",
+                "D. Mối liên hệ giữa linh hồn và thể xác."
+            ],
+            answer: 1
+        },
+        {
+            id: 76,
+            question: "Tăng cường xây dựng củng cố khối đại đoàn kết toàn dân tộc, giữ vững ổn định chính trị - xã hội. Được xác định là một trong những:",
+            options: [
+                "A. Giải pháp đấu tranh phòng, chống sự lợi dụng dân tộc, tôn giáo chống phá cách mạng Việt Nam.",
+                "B. Nội dung đấu tranh phòng, chống sự lợi dụng dân tộc, tôn giáo chống phá cách mạng Việt Nam.",
+                "C. Mục tiêu đấu tranh phòng, chống sự lợi dụng dân tộc, tôn giáo chống phá cách mạng Việt Nam.",
+                "D. Phương châm đấu tranh phòng, chống sự lợi dụng dân tộc, tôn giáo chống phá cách mạng Việt Nam."
+            ],
+            answer: 0
+        },
 
-        // --- AN NINH PHI TRUYỀN THỐNG ---
-        {cat: "An ninh phi truyền thống", q: "Đặc điểm của an ninh phi truyền thống là gì?", options: ["Dễ đối phó bằng quân sự", "Khó đối phó hay giải quyết đơn phương bằng biện pháp quân sự", "Chỉ ảnh hưởng đến 1 quốc gia", "Không liên quan đến kinh tế"], correct: 1},
-        {cat: "An ninh phi truyền thống", q: "Bản chất của an ninh phi truyền thống là gì?", options: ["Quân sự là chủ yếu", "Chạy đua vũ trang", "Phi quân sự, xuyên quốc gia", "Tranh chấp lãnh thổ"], correct: 2},
-        {cat: "An ninh phi truyền thống", q: "Đại dịch Covid-19 là vấn đề an ninh phi truyền thống ở quy mô nào?", options: ["Khu vực", "Châu lục", "Toàn cầu", "Quốc gia"], correct: 2},
+        // ===== HỌC PHẦN 1 (một số câu) =====
+        {
+            id: 77,
+            question: "Chọn câu sai. Nội dung học thuyết bảo vệ Tổ quốc XHCN của Lênin?",
+            options: [
+                "A. Bảo vệ Tổ quốc XHCN là một tất yếu khách quan.",
+                "B. Bảo vệ Tổ quốc XHCN là nghĩa vụ, trách nhiệm của toàn dân.",
+                "C. Đảng Cộng sản lãnh đạo mọi mặt sự nghiệp bảo vệ Tổ quốc XHCN.",
+                "D. Là nhiệm vụ riêng của lực lượng vũ trang."
+            ],
+            answer: 3
+        },
+        {
+            id: 78,
+            question: "Theo tư tưởng Hồ Chí Minh, sự ra đời của quân đội là:",
+            options: [
+                "A. Tính quy luật trong đấu tranh giai cấp, đấu tranh dân tộc ở Việt Nam.",
+                "B. Một tất yếu, là tính quy luật trong đấu tranh giai cấp, đấu tranh dân tộc ở Việt Nam.",
+                "C. Đúng quy luật trong đấu tranh giải phóng dân tộc ở Việt Nam.",
+                "D. Yêu cầu trong đấu tranh giành và giữ chính quyền ở Việt Nam."
+            ],
+            answer: 1
+        },
+        {
+            id: 79,
+            question: "Quan điểm của chủ nghĩa Mác - Lênin về chiến tranh:",
+            options: [
+                "A. Chiến tranh có từ khi xuất hiện loài người.",
+                "B. Chiến tranh là hiện tượng chính trị - xã hội.",
+                "C. Chiến tranh là hiện tượng chính trị - xã hội có tính lịch sử.",
+                "D. Chiến tranh là hiện tượng tranh chấp của giai cấp thống trị."
+            ],
+            answer: 2
+        },
+        {
+            id: 80,
+            question: "Chủ tịch Hồ Chí Minh khẳng định Quân đội nhân dân Việt Nam có:",
+            options: [
+                "A. 3 nhiệm vụ, 2 chức năng.",
+                "B. 3 nhiệm vụ, 3 chức năng.",
+                "C. 2 nhiệm vụ, 2 chức năng.",
+                "D. 2 nhiệm vụ, 3 chức năng."
+            ],
+            answer: 3
+        },
+        {
+            id: 81,
+            question: "Theo tư tưởng Hồ Chí Minh, sử dụng bạo lực cách mạng để:",
+            options: [
+                "A. Giải phóng dân tộc.",
+                "B. Giành chính quyền và bảo vệ chính quyền.",
+                "C. Xây dựng và bảo vệ chính quyền cách mạng.",
+                "D. Phương án A và C đúng."
+            ],
+            answer: 1
+        },
+        {
+            id: 82,
+            question: "Khi nói về bản chất của chủ nghĩa đế quốc, Hồ Chí Minh đã khái quát bằng hình ảnh:",
+            options: [
+                "A. Con rắn độc.",
+                "B. Con bạch tuộc.",
+                "C. Con rồng tre.",
+                "D. Con đỉa hai vòi."
+            ],
+            answer: 3
+        },
+        {
+            id: 83,
+            question: "'Giành chính quyền đã khó, nhưng giữ được chính quyền còn khó khăn hơn'. Ai khẳng định?",
+            options: [
+                "A. C. Mác.",
+                "B. V.I. Lênin.",
+                "C. Ph. Ăngghen.",
+                "D. Chủ tịch Hồ Chí Minh."
+            ],
+            answer: 1
+        },
+        {
+            id: 84,
+            question: "Trong thời đại ngày nay còn chủ nghĩa đế quốc thì còn nguy cơ xảy ra chiến tranh, chiến tranh là bạn đường của chủ nghĩa đế quốc. Ai khẳng định?",
+            options: [
+                "A. C. Mác.",
+                "B. Ph. Ăngghen.",
+                "C. V.I. Lênin.",
+                "D. C. Ph. Claudovit."
+            ],
+            answer: 2
+        },
+        {
+            id: 85,
+            question: "Theo quan điểm của C.Mác - Ph.Ăngghen: con người, kinh tế, chính trị, văn hóa, xã hội, vũ khí trang bị, khoa học quân sự, được xác định là:",
+            options: [
+                "A. Bản chất giai cấp của quân đội.",
+                "B. Sức mạnh chiến đấu của quân đội.",
+                "C. Nguyên tắc xây dựng quân đội.",
+                "D. Nguồn gốc ra đời của quân đội."
+            ],
+            answer: 1
+        },
+        {
+            id: 86,
+            question: "'Dân tộc Việt Nam nhất định phải được giải phóng. Muốn đánh chúng phải có lực lượng quân sự, phải có tổ chức'. Ai khẳng định?",
+            options: [
+                "A. Chủ tịch Hồ Chí Minh.",
+                "B. Chủ tịch Tôn Đức Thắng.",
+                "C. Thủ tướng Phạm Văn Đồng.",
+                "D. Đại tướng Võ Nguyên Giáp."
+            ],
+            answer: 0
+        },
+        {
+            id: 87,
+            question: "Khi bàn về chiến tranh, Claudovit đã quan niệm: Chiến tranh là một hành vi bạo lực. Nhưng lại không lý giải được:",
+            options: [
+                "A. Bản chất của chiến tranh.",
+                "B. Quy luật của chiến tranh.",
+                "C. Tính chất của chiến tranh.",
+                "D. Đặc điểm của chiến tranh."
+            ],
+            answer: 0
+        },
+        {
+            id: 88,
+            question: "Muốn xóa bỏ chiến tranh phải xóa bỏ:",
+            options: [
+                "A. Mâu thuẫn chính trị xã hội.",
+                "B. Lực lượng quân đội.",
+                "C. Nguồn gốc kinh tế, xã hội.",
+                "D. Nguồn gốc kinh tế, chính trị."
+            ],
+            answer: 2
+        },
+        {
+            id: 89,
+            question: "Xác định tính chất xã hội của chiến tranh, phân tích tính chất chính trị - xã hội của chiến tranh xâm lược thuộc địa, chiến tranh ăn cướp của chủ nghĩa đế quốc, chỉ ra tính chất chính nghĩa của chiến tranh giải phóng dân tộc. Được xác định là:",
+            options: [
+                "A. Quan điểm C.Mác - Ph.Ăngghen về chiến tranh.",
+                "B. Tư tưởng Hồ Chí Minh về chiến tranh.",
+                "C. Quan điểm của V.I.Lênin về chiến tranh.",
+                "D. Quan điểm của C.Mác - V.I.Lênin về chiến tranh."
+            ],
+            answer: 1
+        },
 
-        // --- DÂN TỘC - TÔN GIÁO ---
-        {cat: "Dân tộc - Tôn giáo", q: "Quan điểm 'Các dân tộc hoàn toàn bình đẳng...' là của ai?", options: ["C. Mác", "V.I Lênin", "Ph. Ăngghen", "Hồ Chí Minh"], correct: 1},
-        {cat: "Dân tộc - Tôn giáo", q: "Câu nói 'Tôn giáo là thuốc phiện của nhân dân' là của ai?", options: ["Ph. Ăngghen", "V.I Lênin", "C. Mác", "Hồ Chí Minh"], correct: 2},
-        {cat: "Dân tộc - Tôn giáo", q: "Việt Nam hiện nay có mấy tôn giáo lớn? Tôn giáo nào là nội sinh?", options: ["6: Phật giáo và Hòa Hảo", "6: Cao Đài và Hòa Hảo", "5: Công giáo và Phật giáo", "7: Cao Đài và Hồi giáo"], correct: 1},
-        {cat: "Dân tộc - Tôn giáo", q: "Nội dung cốt lõi của công tác tôn giáo là gì?", options: ["Công tác tổ chức", "Công tác tư tưởng", "Công tác vận động quần chúng", "Công tác xây dựng cơ sở"], correct: 2},
+        // ===== XÂY DỰNG NỀN QUỐC PHÒNG TOÀN DÂN =====
+        {
+            id: 90,
+            question: "'Sức mạnh quốc phòng của đất nước, được xây dựng trên nền tảng chính trị, tinh thần, nhân lực, vật lực, tài chính, mang tính chất toàn dân, toàn diện, độc lập, tự chủ, tự lực, tự cường'. Được xác định là:",
+            options: [
+                "A. Khái niệm nền quốc phòng toàn dân.",
+                "B. Khái niệm an ninh nhân dân.",
+                "C. Khái niệm lực lượng vũ trang nhân dân.",
+                "D. Khái niệm bảo vệ Tổ quốc."
+            ],
+            answer: 0
+        },
+        {
+            id: 91,
+            question: "Nền quốc phòng toàn dân, an ninh nhân dân chỉ có mục đích duy nhất là tự vệ chính đáng. Được xác định là một trong những:",
+            options: [
+                "A. Vị trí nền quốc phòng toàn dân, an ninh nhân dân.",
+                "B. Đặc trưng nền quốc phòng toàn dân, an ninh nhân dân.",
+                "C. Khái niệm nền quốc phòng toàn dân, an ninh nhân dân.",
+                "D. Biện pháp xây dựng nền quốc phòng toàn dân, an ninh nhân dân."
+            ],
+            answer: 1
+        },
+        {
+            id: 92,
+            question: "Nền quốc phòng, an ninh vì dân, của dân và do toàn thể nhân dân tiến hành. Được xác định là một trong những:",
+            options: [
+                "A. Đặc trưng nền quốc phòng toàn dân, an ninh nhân dân.",
+                "B. Vị trí nền quốc phòng toàn dân, an ninh nhân dân.",
+                "C. Nội dung nền quốc phòng toàn dân, an ninh nhân dân.",
+                "D. Biện pháp xây dựng nền quốc phòng toàn dân, an ninh nhân dân."
+            ],
+            answer: 0
+        },
+        {
+            id: 93,
+            question: "Xây dựng lực lượng quốc phòng và an ninh đáp ứng yêu cầu bảo vệ vững chắc Tổ quốc Việt Nam xã hội chủ nghĩa. Được xác định là một trong những:",
+            options: [
+                "A. Nội dung xây dựng nền quốc phòng và an ninh.",
+                "B. Vị trí xây dựng nền quốc phòng và an ninh.",
+                "C. Biện pháp xây dựng nền quốc phòng và an ninh.",
+                "D. Nhiệm vụ xây dựng nền quốc phòng và an ninh."
+            ],
+            answer: 3
+        },
+        {
+            id: 94,
+            question: "Nội dung cơ bản xây dựng nền quốc phòng toàn dân theo Điểm b, Khoản 2, Điều 7, Luật quốc phòng 2018 là:",
+            options: [
+                "A. Xây dựng thực lực, tiềm lực quốc phòng; xây dựng lực lượng vũ trang nhân dân vững mạnh, có sức chiến đấu cao, làm nòng cốt bảo vệ Tổ quốc.",
+                "B. Xây dựng kế hoạch, tổ chức chuẩn bị và thực hiện phòng thủ quân khu.",
+                "C. Xây dựng cơ quan, đơn vị của quân khu vững mạnh toàn diện, có sức chiến đấu cao.",
+                "D. Xây dựng kế hoạch và chỉ đạo, hướng dẫn cơ quan, đơn vị của quân khu."
+            ],
+            answer: 0
+        },
+        {
+            id: 95,
+            question: "Tiềm lực nào sau đây là cơ sở vật chất cho các tiềm lực khác trong xây dựng nền quốc phòng toàn dân, an ninh nhân dân?",
+            options: [
+                "A. Tiềm lực chính trị, tinh thần.",
+                "B. Tiềm lực kinh tế.",
+                "C. Tiềm lực quân sự, an ninh.",
+                "D. Tiềm lực khoa học, công nghệ."
+            ],
+            answer: 1
+        },
+        {
+            id: 96,
+            question: "Thực chất của việc xây dựng tiềm lực chính trị, tinh thần là:",
+            options: [
+                "A. Xây dựng nhân tố con người mới Việt Nam xã hội chủ nghĩa.",
+                "B. Xây dựng lực lượng tiến hành công tác tư tưởng.",
+                "C. Xây dựng thế trận lòng dân.",
+                "D. Xây dựng hệ thống chính trị trong thời chiến."
+            ],
+            answer: 2
+        },
+        {
+            id: 97,
+            question: "Tiềm lực chính trị, tinh thần của nền quốc phòng toàn dân, an ninh nhân dân. Được xác định là:",
+            options: [
+                "A. Nhân tố không cần thiết tạo nên sức mạnh của quốc phòng và an ninh.",
+                "B. Nhân tố không quyết định tạo nên sức mạnh của quốc phòng và an ninh.",
+                "C. Nhân tố cơ bản tạo nên sức mạnh của quốc phòng và an ninh.",
+                "D. Nhân tố không cơ bản tạo nên sức mạnh của quốc phòng và an ninh."
+            ],
+            answer: 2
+        },
+        {
+            id: 98,
+            question: "Thế trận quốc phòng và an ninh là sự tổ chức, bố trí lực lượng, tiềm lực mọi mặt của đất nước và của toàn dân trên toàn lãnh thổ theo yêu cầu của quốc phòng và an ninh để bảo vệ Tổ quốc. Được xác định là:",
+            options: [
+                "A. Khái niệm về thế trận quốc phòng và an ninh.",
+                "B. Khái niệm về tiềm lực chính trị, tinh thần.",
+                "C. Khái niệm về tiềm lực kinh tế.",
+                "D. Khái niệm về nền quốc phòng toàn dân và an ninh nhân dân."
+            ],
+            answer: 0
+        },
+        {
+            id: 99,
+            question: "'Giữ vững và tăng cường sự lãnh đạo tuyệt đối, trực tiếp về mọi mặt của Đảng, sự quản lý tập trung, thống nhất của Nhà nước đối với quân đội nhân dân, công an nhân dân và sự nghiệp quốc phòng, an ninh'. Đảng ta khẳng định trong:",
+            options: [
+                "A. Văn kiện Đại hội đại biểu Đảng toàn quốc lần thứ XIII.",
+                "B. Văn kiện Đại hội đại biểu Đảng toàn quốc lần thứ XII.",
+                "C. Văn kiện Đại hội đại biểu Đảng toàn quốc lần thứ XI.",
+                "D. Văn kiện Đại hội đại biểu Đảng toàn quốc lần thứ X."
+            ],
+            answer: 0
+        },
+        {
+            id: 100,
+            question: "'Không quân đội nào, không khí giới nào có thể đánh ngã được tinh thần hy sinh của toàn thể một dân tộc'. Ai khẳng định?",
+            options: [
+                "A. C. Mác.",
+                "B. Ph. Ăngghen.",
+                "C. V.I. Lênin.",
+                "D. Hồ Chí Minh."
+            ],
+            answer: 3
+        },
+        {
+            id: 101,
+            question: "Nền quốc phòng toàn dân gắn chặt với nền an ninh nhân dân. Được xác định là một trong những:",
+            options: [
+                "A. Đặc trưng của nền quốc phòng toàn dân và an ninh nhân dân.",
+                "B. Vị trí của nền quốc phòng toàn dân và an ninh nhân dân.",
+                "C. Khái niệm của nền quốc phòng toàn dân và an ninh nhân dân.",
+                "D. Mục đích của nền quốc phòng toàn dân và an ninh nhân dân."
+            ],
+            answer: 0
+        },
 
-        // --- QUAN ĐIỂM MÁC LÊNIN - HCM ---
-        {cat: "Mác Lênin - HCM", q: "Chọn câu sai về học thuyết bảo vệ Tổ quốc XHCN của Lênin?", options: ["Là tất yếu khách quan", "Là nghĩa vụ của toàn dân", "Đảng lãnh đạo mọi mặt", "Là nhiệm vụ riêng của lực lượng vũ trang"], correct: 3},
-        {cat: "Mác Lênin - HCM", q: "Quân đội nhân dân Việt Nam có mấy nhiệm vụ, chức năng?", options: ["3 nhiệm vụ, 2 chức năng", "2 nhiệm vụ, 3 chức năng", "3 nhiệm vụ, 3 chức năng", "2 nhiệm vụ, 2 chức năng"], correct: 0},
-        {cat: "Mác Lênin - HCM", q: "Nguồn gốc nảy sinh chiến tranh theo C.Mác-V.I Lênin là gì?", options: ["Chế độ công hữu", "Chế độ tư hữu về tư liệu sản xuất và đối kháng giai cấp", "Bản năng sinh vật", "Định mệnh"], correct: 1},
-
-        // --- QUỐC PHÒNG TOÀN DÂN ---
-        {cat: "Quốc phòng toàn dân", q: "Khái niệm nền quốc phòng toàn dân mang tính chất gì?", options: ["Toàn dân, toàn diện, độc lập, tự chủ, tự lực, tự cường", "Chỉ tập trung vào quân sự", "Dựa hoàn toàn vào ngoại giao", "Phát triển kinh tế là chính"], correct: 0},
-        {cat: "Quốc phòng toàn dân", q: "Nền quốc phòng toàn dân, an ninh nhân dân chỉ có mục đích duy nhất là gì?", options: ["Phòng ngừa chiến tranh", "Tự vệ chính đáng", "Bảo vệ tài sản", "Giữ vững an ninh xã hội"], correct: 1},
-        {cat: "Quốc phòng toàn dân", q: "Cơ chế lãnh đạo nền QPTD và ANND do tổ chức nào lãnh đạo?", options: ["Quân đội chỉ huy", "Đảng lãnh đạo, nhà nước thống nhất quản lý", "Nhân dân tự nguyện", "Bộ quốc phòng"], correct: 1},
-
-        // --- CHIẾN TRANH NHÂN DÂN ---
-        {cat: "Chiến tranh nhân dân", q: "Lực lượng nòng cốt của chiến tranh nhân dân là gì?", options: ["Bộ đội chủ lực", "Dân quân tự vệ", "Lực lượng vũ trang nhân dân", "Công an nhân dân"], correct: 2},
-        {cat: "Chiến tranh nhân dân", q: "Tiêu chí phân biệt tính chất chiến tranh chính nghĩa và phi nghĩa là gì?", options: ["Chủng loại vũ khí", "Hoàn cảnh tiến hành", "Mục đích của cuộc chiến tranh", "Quy mô chiến tranh"], correct: 2},
-        {cat: "Chiến tranh nhân dân", q: "Tiến hành chiến tranh nhân dân lấy gì là chủ yếu?", options: ["Đấu tranh kinh tế", "Đấu tranh quân sự", "Đấu tranh ngoại giao", "Đấu tranh chính trị"], correct: 1},
-
-        // --- XÂY DỰNG LLVT ---
-        {cat: "Xây dựng LLVT", q: "LLVT nhân dân Việt Nam do tổ chức nào lãnh đạo?", options: ["Quốc hội", "Chính phủ", "Đảng Cộng sản Việt Nam", "Mặt trận Tổ quốc"], correct: 2},
-        {cat: "Xây dựng LLVT", q: "Đảng lãnh đạo LLVTND theo nguyên tắc nào?", options: ["Tuyệt đối, toàn diện", "Tuyệt đối, trực tiếp về mọi mặt", "Trực tiếp, toàn diện", "Gián tiếp, toàn diện"], correct: 1},
-        {cat: "Xây dựng LLVT", q: "Phương hướng xây dựng quân đội đến 2025 là gì?", options: ["Nhanh, hiện đại, chính xác", "Đông, mạnh", "Tinh, gọn, mạnh", "Cơ động, nhanh nhẹn"], correct: 2},
-
-        // --- KINH TẾ VỚI QUỐC PHÒNG ---
-        {cat: "Kinh tế - Quốc phòng", q: "Trong mối quan hệ giữa kinh tế và quốc phòng, yếu tố nào quyết định?", options: ["Văn hóa", "Kinh tế", "Khoa học", "Ngoại giao"], correct: 1},
-        {cat: "Kinh tế - Quốc phòng", q: "Kế sách 'ngụ binh ư nông' được thực hiện đầu tiên ở triều đại nào?", options: ["Nhà Đinh", "Nhà Lý", "Nhà Hậu Lê", "Nhà Trần"], correct: 2},
-        {cat: "Kinh tế - Quốc phòng", q: "Khi xây dựng công trình quốc phòng phải bảo đảm tính gì?", options: ["Thẩm mỹ", "Thị trường", "Lưỡng dụng", "Cạnh tranh"], correct: 2},
-
-        // --- NGHỆ THUẬT QUÂN SỰ ---
-        {cat: "Nghệ thuật quân sự", q: "Khởi nghĩa Lam Sơn 1418-1427 do ai lãnh đạo?", options: ["Trần Quốc Tuấn", "Lê Lợi - Nguyễn Trãi", "Quang Trung", "Lý Thường Kiệt"], correct: 1},
-        {cat: "Nghệ thuật quân sự", q: "Chiến dịch Điện Biên Phủ 1954 là loại hình chiến dịch gì?", options: ["Phòng ngự", "Phản công", "Tiến công", "Nghi binh"], correct: 2},
-        {cat: "Nghệ thuật quân sự", q: "Trong Điện Biên Phủ, ta đổi phương châm từ 'đánh nhanh' sang gì?", options: ["Đánh mạnh", "Đánh chắc, tiến chắc", "Đánh lén", "Đánh chạy"], correct: 1},
-
-        // --- DÂN QUÂN TỰ VỆ ---
-        {cat: "Dân quân tự vệ", q: "Lực lượng vũ trang quần chúng không thoát ly sản xuất là gì?", options: ["Bộ đội chủ lực", "Bộ đội địa phương", "Dân quân tự vệ", "Dự bị động viên"], correct: 2},
-        {cat: "Dân quân tự vệ", q: "Độ tuổi tham gia Dân quân tự vệ trong thời bình (Nam, Nữ) là gì?", options: ["18-45, 18-35", "18-35, 18-25", "18-40, 18-30", "18-25, 18-20"], correct: 0},
-        {cat: "Dân quân tự vệ", q: "Ai là người phát lệnh tổng động viên?", options: ["Tổng bí thư", "Chủ tịch nước", "Thủ tướng", "Bộ trưởng Bộ Quốc phòng"], correct: 1},
-
-        // --- AN NINH QUỐC GIA ---
-        {cat: "An ninh quốc gia", q: "Nội dung nào trong bảo vệ an ninh quốc gia là quan trọng nhất?", options: ["An ninh kinh tế", "An ninh biên giới", "An ninh chính trị nội bộ", "An ninh văn hóa"], correct: 2},
-        {cat: "An ninh quốc gia", q: "Cơ quan chuyên trách bảo vệ an ninh biên giới đất liền là gì?", options: ["Công an Nhân dân", "Bộ đội Biên phòng", "Hải quan", "Dân quân tự vệ"], correct: 1}
+        // ===== THÊM CÂU HỎI TỰ SINH (tương tự) =====
+        {
+            id: 102,
+            question: "Theo Luật An ninh mạng, hành vi sử dụng không gian mạng để xúc phạm danh dự, nhân phẩm của người khác bị xử lý như thế nào?",
+            options: [
+                "A. Bị phạt tiền và có thể bị truy cứu trách nhiệm hình sự.",
+                "B. Chỉ bị phạt hành chính.",
+                "C. Không bị xử lý nếu là lần đầu.",
+                "D. Chỉ bị cảnh cáo."
+            ],
+            answer: 0
+        },
+        {
+            id: 103,
+            question: "Một trong những biện pháp phòng chống chiến lược 'diễn biến hòa bình' của các thế lực thù địch là:",
+            options: [
+                "A. Tăng cường công tác tư tưởng, giáo dục chính trị cho nhân dân.",
+                "B. Hạn chế giao lưu quốc tế.",
+                "C. Tăng cường quân sự hóa biên giới.",
+                "D. Cấm các hoạt động tôn giáo."
+            ],
+            answer: 0
+        },
+        {
+            id: 104,
+            question: "Theo quy định của pháp luật Việt Nam, hành vi nào sau đây bị nghiêm cấm trong bảo vệ môi trường?",
+            options: [
+                "A. Xả thải chưa qua xử lý ra môi trường.",
+                "B. Sử dụng năng lượng tái tạo.",
+                "C. Tái chế chất thải.",
+                "D. Trồng cây gây rừng."
+            ],
+            answer: 0
+        },
+        {
+            id: 105,
+            question: "An ninh phi truyền thống có đặc điểm nào sau đây?",
+            options: [
+                "A. Khó giải quyết đơn phương bằng biện pháp quân sự.",
+                "B. Chỉ ảnh hưởng đến một quốc gia.",
+                "C. Không ảnh hưởng đến an ninh quốc gia.",
+                "D. Dễ dàng kiểm soát bằng lực lượng vũ trang."
+            ],
+            answer: 0
+        },
+        {
+            id: 106,
+            question: "Tư tưởng Hồ Chí Minh về quân đội nhân dân nhấn mạnh quân đội phải là:",
+            options: [
+                "A. Đội quân chiến đấu, công tác và sản xuất.",
+                "B. Đội quân chỉ chuyên chiến đấu.",
+                "C. Lực lượng tinh nhuệ, hiện đại.",
+                "D. Lực lượng đứng ngoài chính trị."
+            ],
+            answer: 0
+        }
     ];
 
-    const form = document.getElementById('quizForm');
-    const searchBox = document.getElementById('searchBox');
-    const categoryFilter = document.getElementById('categoryFilter');
-    const toggleBtn = document.getElementById('toggleAnswerBtn');
-    let showAnswersMode = false;
+    // ============================================================
+    //  HIỂN THỊ
+    // ============================================================
+    let selected = {}; // lưu lựa chọn của người dùng
+    let revealed = false; // có hiện đáp án không
 
-    // Đổ dữ liệu vào Select chuyên đề
-    const categories = [...new Set(quizData.map(item => item.cat))];
-    categories.forEach(cat => {
-        let option = document.createElement('option');
-        option.value = cat;
-        option.textContent = cat;
-        categoryFilter.appendChild(option);
-    });
+    function render() {
+        const container = document.getElementById('questionsContainer');
+        container.innerHTML = '';
+        let totalAnswered = 0;
+        questions.forEach((q, idx) => {
+            const card = document.createElement('div');
+            card.className = 'question-card';
+            card.id = 'q-' + idx;
 
-    function renderQuiz() {
-        const searchText = searchBox.value.toLowerCase();
-        const selectedCat = categoryFilter.value;
+            const numDiv = document.createElement('div');
+            numDiv.className = 'question-number';
+            numDiv.textContent = `Câu ${idx+1}:`;
+            card.appendChild(numDiv);
 
-        const filteredData = quizData.filter(item => {
-            const matchCat = (selectedCat === 'all') || (item.cat === selectedCat);
-            const matchSearch = item.q.toLowerCase().includes(searchText) || item.options.join(" ").toLowerCase().includes(searchText);
-            return matchCat && matchSearch;
-        });
+            const qDiv = document.createElement('div');
+            qDiv.className = 'question-text';
+            qDiv.textContent = q.question;
+            card.appendChild(qDiv);
 
-        form.innerHTML = '';
-        if (filteredData.length === 0) {
-            form.innerHTML = '<p style="text-align:center; color:red;">Không tìm thấy câu hỏi phù hợp.</p>';
-            return;
-        }
+            const optDiv = document.createElement('div');
+            optDiv.className = 'options';
+            q.options.forEach((opt, oi) => {
+                const optEl = document.createElement('div');
+                optEl.className = 'option';
+                optEl.textContent = opt;
+                optEl.dataset.optIndex = oi;
+                optEl.dataset.qIndex = idx;
 
-        filteredData.forEach((item, index) => {
-            const qBox = document.createElement('div');
-            qBox.className = 'question-box' + (showAnswersMode ? ' show-answer' : '');
-            qBox.id = `q${index}`;
-            
-            let optionsHtml = item.options.map((opt, i) => `
-                <label class="${i === item.correct ? 'correct' : ''}">
-                    <input type="radio" name="q${index}" value="${i}"> ${opt}
-                </label>
-            `).join('');
-
-            qBox.innerHTML = `
-                <div class="question-text">Câu ${index + 1}: ${item.q}</div>
-                <div class="options">
-                    ${optionsHtml}
-                </div>
-            `;
-            form.appendChild(qBox);
-        });
-    }
-
-    function toggleAnswers() {
-        showAnswersMode = !showAnswersMode;
-        if (showAnswersMode) {
-            toggleBtn.classList.add('active');
-            toggleBtn.innerText = "Tắt hiển thị đáp án";
-        } else {
-            toggleBtn.classList.remove('active');
-            toggleBtn.innerText = "Bật hiển thị đáp án (Đỏ)";
-        }
-        renderQuiz(); // Render lại để áp dụng CSS màu đỏ
-    }
-
-    function checkAnswers() {
-        let score = 0;
-        const questions = document.querySelectorAll('.question-box');
-        
-        questions.forEach(qBox => {
-            const index = qBox.id.replace('q', '');
-            const correctIndex = quizData[index].correct;
-            const labels = qBox.querySelectorAll('.options label');
-            const selectedInput = qBox.querySelector(`input[name="q${index}"]:checked`);
-
-            // Xóa class cũ nếu có
-            labels.forEach(label => label.classList.remove('user-correct', 'user-wrong'));
-
-            if (selectedInput) {
-                const selectedIndex = parseInt(selectedInput.value);
-                if (selectedIndex === correctIndex) {
-                    score++;
-                    labels[selectedIndex].classList.add('user-correct');
-                } else {
-                    labels[selectedIndex].classList.add('user-wrong');
-                    labels[correctIndex].classList.add('user-correct'); // Chỉ màu đỏ nếu sai
+                // Nếu đã chọn
+                if (selected[idx] !== undefined && selected[idx] === oi) {
+                    optEl.classList.add('selected');
                 }
-            } else {
-                // Nếu không chọn, vẫn hiện đáp án đúng
-                labels[correctIndex].classList.add('user-correct');
+                // Nếu đang hiện đáp án
+                if (revealed) {
+                    if (oi === q.answer) {
+                        optEl.classList.add('correct-answer');
+                        optEl.style.borderColor = '#27ae60';
+                    }
+                    if (selected[idx] !== undefined && selected[idx] === oi && oi !== q.answer) {
+                        optEl.classList.add('wrong-answer');
+                        optEl.style.borderColor = '#e74c3c';
+                    }
+                    if (selected[idx] !== undefined && selected[idx] === oi && oi === q.answer) {
+                        optEl.classList.add('correct-answer');
+                        optEl.style.borderColor = '#27ae60';
+                    }
+                }
+
+                optEl.addEventListener('click', function(e) {
+                    if (revealed) return; // không cho chọn khi đang hiển thị đáp án
+                    const qi = parseInt(this.dataset.qIndex);
+                    const oi2 = parseInt(this.dataset.optIndex);
+                    selectOption(qi, oi2);
+                });
+
+                optDiv.appendChild(optEl);
+            });
+            card.appendChild(optDiv);
+
+            // Feedback
+            const feedback = document.createElement('div');
+            feedback.className = 'answer-feedback';
+            feedback.id = 'fb-' + idx;
+            if (selected[idx] !== undefined) {
+                const isCorrect = (selected[idx] === q.answer);
+                if (isCorrect) {
+                    feedback.textContent = '✅ Đúng!';
+                    feedback.classList.add('correct');
+                    totalAnswered++;
+                } else {
+                    feedback.textContent = '❌ Sai! Đáp án đúng: ' + q.options[q.answer];
+                    feedback.classList.add('wrong');
+                }
+            } else if (revealed) {
+                feedback.textContent = '🔎 Đáp án đúng: ' + q.options[q.answer];
+                feedback.classList.add('show-answer');
             }
+            card.appendChild(feedback);
+
+            // Nếu có đáp án đúng hiển thị sẵn (khi reveal)
+            if (revealed && selected[idx] === undefined) {
+                const hint = document.createElement('div');
+                hint.style.marginTop = '8px';
+                hint.style.color = '#c0392b';
+                hint.style.fontWeight = '600';
+                hint.textContent = '👉 Đáp án: ' + q.options[q.answer];
+                card.appendChild(hint);
+            }
+
+            container.appendChild(card);
         });
 
-        const resultDiv = document.getElementById('result');
-        resultDiv.style.display = 'block';
-        resultDiv.innerHTML = `🎯 KẾT QUẢ: Bạn đạt <strong>${score}/${questions.length}</strong> câu đúng!`;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        document.getElementById('totalCount').textContent = questions.length;
+        document.getElementById('stats').textContent = `Đã chọn: ${totalAnswered} / ${questions.length}`;
+
+        // highlight correct answer in red (additional)
+        if (revealed) {
+            document.querySelectorAll('.correct-answer').forEach(el => {
+                el.style.color = '#c0392b';
+                el.style.fontWeight = 'bold';
+            });
+        }
     }
 
-    searchBox.addEventListener('input', renderQuiz);
-    categoryFilter.addEventListener('change', renderQuiz);
+    function selectOption(qIdx, optIdx) {
+        if (revealed) return;
+        selected[qIdx] = optIdx;
+        render();
+    }
 
-    // Render lần đầu
-    renderQuiz();
+    function showAllAnswers() {
+        revealed = true;
+        render();
+    }
+
+    function hideAllAnswers() {
+        revealed = false;
+        render();
+    }
+
+    function resetSelection() {
+        selected = {};
+        revealed = false;
+        render();
+    }
+
+    // Initial render
+    render();
 </script>
-
 </body>
 </html>
