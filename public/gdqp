@@ -1,0 +1,156 @@
+Tôi đã tạo file `index.html` với các nút bấm dẫn đến 3 trang học phần HP1, HP3 và HP4. Giao diện trực quan, dễ sử dụng để bạn truy cập nhanh vào từng bộ đề trắc nghiệm.
+
+```html
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📚 Trắc nghiệm HP1 - HP3 - HP4</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(145deg, #eef2f7 0%, #d9e2ec 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 700px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            border-radius: 40px;
+            padding: 45px 35px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: 0.3s;
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1a2a3a;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+        .subtitle {
+            font-size: 16px;
+            color: #4a5a6a;
+            margin-bottom: 35px;
+            border-bottom: 2px dashed #b0c4d9;
+            padding-bottom: 20px;
+        }
+        .button-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            margin-top: 10px;
+        }
+        .btn-hp {
+            display: block;
+            width: 100%;
+            padding: 20px 24px;
+            border: none;
+            border-radius: 60px;
+            font-size: 22px;
+            font-weight: 600;
+            color: white;
+            background: #2c3e50;
+            cursor: pointer;
+            transition: 0.25s ease;
+            box-shadow: 0 8px 0 #1a2a3a;
+            text-decoration: none;
+            text-align: center;
+            letter-spacing: 0.5px;
+            position: relative;
+        }
+        .btn-hp:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 11px 0 #1a2a3a;
+        }
+        .btn-hp:active {
+            transform: translateY(6px);
+            box-shadow: 0 4px 0 #1a2a3a;
+        }
+        .btn-hp .badge {
+            font-size: 14px;
+            font-weight: 400;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 14px;
+            border-radius: 30px;
+            margin-left: 12px;
+        }
+        .btn-hp1 {
+            background: #1f6f8b;
+            box-shadow: 0 8px 0 #12506b;
+        }
+        .btn-hp1:hover {
+            background: #1a5f79;
+        }
+        .btn-hp3 {
+            background: #2a7f6e;
+            box-shadow: 0 8px 0 #1a5f4e;
+        }
+        .btn-hp3:hover {
+            background: #236b5c;
+        }
+        .btn-hp4 {
+            background: #a05c3b;
+            box-shadow: 0 8px 0 #7a452b;
+        }
+        .btn-hp4:hover {
+            background: #8a4f32;
+        }
+        .footer {
+            margin-top: 38px;
+            font-size: 14px;
+            color: #5a6a7a;
+            border-top: 1px solid #d0dce8;
+            padding-top: 20px;
+        }
+        .footer span {
+            font-weight: 600;
+            color: #1a2a3a;
+        }
+        @media (max-width: 480px) {
+            .container { padding: 30px 20px; }
+            .btn-hp { font-size: 18px; padding: 16px 18px; }
+            h1 { font-size: 26px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📘 Ôn tập trắc nghiệm</h1>
+    <div class="subtitle">Chọn học phần để bắt đầu luyện tập</div>
+
+    <div class="button-grid">
+        <a href="hp1.html" class="btn-hp btn-hp1">
+            📖 Học phần 1
+            <span class="badge">Cơ bản</span>
+        </a>
+        <a href="hp3.html" class="btn-hp btn-hp3">
+            📖 Học phần 3
+            <span class="badge">Quản lý bộ đội</span>
+        </a>
+        <a href="hp4.html" class="btn-hp btn-hp4">
+            📖 Học phần 4
+            <span class="badge">Súng & chiến thuật</span>
+        </a>
+    </div>
+
+    <div class="footer">
+        ⚡ <span>Lưu ý:</span> Các file <strong>hp1.html</strong>, <strong>hp3.html</strong>, <strong>hp4.html</strong> phải nằm cùng thư mục với file này.
+    </div>
+</div>
+</body>
+</html>
+```
