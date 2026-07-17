@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ôn Tập Trắc Nghiệm Quốc Phòng - An Ninh</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #0056b3;
+            margin-bottom: 20px;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        input[type="text"], select {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+            outline: none;
+        }
+        input[type="text"]:focus, select:focus {
+            border-color: #0056b3;
+        }
+        .toggle-btn {
+            padding: 10px 20px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .toggle-btn.active {
+            background: #28a745;
+        }
+        .toggle-btn:hover {
+            opacity: 0.9;
+        }
+        .question-box {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        .question-text {
+            font-weight: bold;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+        .options label {
+            display: block;
+            margin: 8px 0;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        .options label:hover {
+            background-color: #e9f5ff;
+            border-color: #b3d7ff;
+        }
+        .options input {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+        /* ĐÁP ÁN ĐÚNG MÀU ĐỎ IN ĐẬM */
+        .show-answer .options .correct {
+            color: #d32f2f;
+            font-weight: bold;
+            background-color: #ffebee;
+            border: 1px solid #ef9a9a;
+        }
+        
+        /* TRẠNG THÁI KHI CHẤM BÀI */
+        .options .user-correct {
+            background-color: #d4edda !important;
+            border: 1px solid #c3e6cb !important;
+            color: #155724;
+            font-weight: bold;
+        }
+        .options .user-wrong {
+            background-color: #f8d7da !important;
+            border: 1px solid #f5c6cb !important;
+            color: #721c24;
+            font-weight: bold;
+        }
+        .submit-btn {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background: #0056b3;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .submit-btn:hover {
+            background: #004494;
+        }
+        #result {
+            display: none;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background: #e9ecef;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📚 ÔN TẬP TRẮC NGHIỆM QUỐC PHÒNG - AN NINH</h1>
+    
+    <div class="toolbar">
+        <div class="controls">
+            <input type="text" id="searchBox" placeholder="🔍 Tìm kiếm câu hỏi...">
+            <select id="categoryFilter">
+                <option value="all">Tất cả chuyên đề</option>
+            </select>
+        </div>
+        <button class="toggle-btn" id="toggleAnswerBtn" onclick="toggleAnswers()">Bật hiển thị đáp án (Đỏ)</button>
+    </div>
+
+    <div id="result"></div>
+    <form id="quizForm"></form>
+    <button class="submit-btn" onclick="checkAnswers()">NỘP BÀI & CHẤM ĐIỂM</button>
+</div>
+
+<script>
+    // Ngân hàng câu hỏi (Đã thêm đáp án sai để tạo thành trắc nghiệm)
+    const quizData = [
+        // --- BIÊN GIỚI LÃNH THỔ ---
+        {cat: "Biên giới", q: "Lãnh thổ quốc gia Việt Nam bao gồm:", options: ["Vùng đất, vùng biển, vùng trời ngoài ra còn có lãnh thổ quốc gia đặc biệt", "Vùng đất và vùng biển", "Vùng trời và vùng đất", "Vùng biển và hải đảo"], correct: 0},
+        {cat: "Biên giới", q: "Lãnh hải là vùng biển có chiều rộng bao nhiêu hải lí?", options: ["24 hải lý", "12 hải lý", "200 hải lý", "3 hải lý"], correct: 1},
+        {cat: "Biên giới", q: "Vùng tiếp giáp lãnh hải rộng bao nhiêu hải lý?", options: ["12 hải lý", "24 hải lý", "48 hải lý", "200 hải lý"], correct: 1},
+        {cat: "Biên giới", q: "Lực lượng nào làm nòng cốt, chuyên trách trong quản lý, bảo vệ biên giới quốc gia trên đất liền?", options: ["Công an Nhân dân", "Bộ đội Biên phòng", "Dân quân tự vệ", "Hải quân"], correct: 1},
+        {cat: "Biên giới", q: "Biên giới quốc gia trên biển cách đường cơ sở bao nhiêu hải lí?", options: ["12 hải lý", "24 hải lý", "200 hải lý", "3 hải lý"], correct: 0},
+        {cat: "Biên giới", q: "Xây dựng và bảo vệ chủ quyền lãnh thổ, biên giới quốc gia là sự nghiệp của:", options: ["Lực lượng vũ trang", "Bộ đội Biên phòng", "Toàn dân", "Chính phủ"], correct: 2},
+
+        // --- AN TOÀN THÔNG TIN, KHÔNG GIAN MẠNG ---
+        {cat: "An ninh mạng", q: "An ninh mạng là sự bảo đảm hoạt động trên không gian mạng như thế nào?", options: ["Gây phương hại đến an ninh quốc gia", "Không gây phương hại đến an ninh quốc gia, trật tự an toàn xã hội...", "Giới hạn bởi không gian và thời gian", "Chỉ phục vụ mục đích kinh tế"], correct: 1},
+        {cat: "An ninh mạng", q: "Tội phạm mạng là hành vi sử dụng không gian mạng để thực hiện tội phạm được quy định tại?", options: ["Bộ luật dân sự", "Bộ luật hành chính", "Bộ luật hình sự", "Luật An ninh mạng"], correct: 2},
+        {cat: "An ninh mạng", q: "Đặc điểm của an toàn thông tin bao gồm những tính chất nào?", options: ["Tính bí mật, tính toàn vẹn, tính sẵn sàng", "Tính bí mật, tính công khai, tính sẵn sàng", "Tính toàn vẹn, tính tiện ích, tính bí mật", "Tính sẵn sàng, tính phổ biến, tính toàn vẹn"], correct: 0},
+        {cat: "An ninh mạng", q: "Các hành vi bị nghiêm cấm về an ninh mạng được quy định tại điều nào Luật An ninh mạng?", options: ["Điều 5", "Điều 6", "Điều 7", "Điều 8"], correct: 2},
+        {cat: "An ninh mạng", q: "Thông tin sai sự thật gây hoang mang trong nhân dân là hành vi như thế nào?", options: ["Được khuyến khích", "Không bị nghiêm cấm", "Bị hạn chế một phần", "Bị nghiêm cấm vi phạm pháp luật trên không gian mạng"], correct: 3},
+
+        // --- DIỄN BIẾN HÒA BÌNH ---
+        {cat: "Diễn biến hòa bình", q: "Chiến lược diễn biến hòa bình được tiến hành bằng biện pháp nào?", options: ["Biện pháp quân sự", "Biện pháp vũ trang", "Biện pháp phi quân sự", "Biện pháp ngoại giao"], correct: 2},
+        {cat: "Diễn biến hòa bình", q: "Ai là người khởi xướng chiến lược diễn biến hòa bình của chủ nghĩa đế quốc?", options: ["Aixenhao", "Kennan", "Truman", "Mác San"], correct: 1},
+        {cat: "Diễn biến hòa bình", q: "Mục tiêu nhất quán của chiến lược diễn biến hòa bình đối với Việt Nam là gì?", options: ["Xóa bỏ vai trò lãnh đạo của Đảng, xóa bỏ chế độ XHCN", "Phát triển kinh tế thị trường", "Giúp đỡ Việt Nam hiện đại hóa", "Hợp tác quốc phòng"], correct: 0},
+        {cat: "Diễn biến hòa bình", q: "Khái niệm 'Bạo loạn lật đổ' là hành động chống phá bằng:", options: ["Biện pháp hòa bình", "Bạo lực có tổ chức nhằm gây rối loạn an ninh hoặc lật đổ chính quyền", "Biện pháp kinh tế", "Tuyên truyền trên mạng"], correct: 1},
+
+        // --- TỘI PHẠM DANH DỰ, NHÂN PHẨM ---
+        {cat: "Danh dự nhân phẩm", q: "Mọi người có quyền bất khả xâm phạm về thân thể được quy định tại đâu?", options: ["Khoản 1, Điều 20, Hiến pháp 2013", "Khoản 1, Điều 21, Hiến pháp 2013", "Khoản 1, Điều 22, Hiến pháp 2013", "Khoản 1, Điều 24, Hiến pháp 2013"], correct: 1},
+        {cat: "Danh dự nhân phẩm", q: "Tội hiếp dâm, cưỡng dâm được hiểu là nhóm tội gì?", options: ["Tội xâm phạm tình dục", "Tội mua bán người", "Tội làm nhục người khác", "Tội xâm phạm sức khỏe"], correct: 0},
+        {cat: "Danh dự nhân phẩm", q: "Khi có hành vi xâm phạm danh dự xảy ra trong trường lớp, sinh viên cần làm gì?", options: ["Gọi người thân đến hành hung", "Xử lý nội bộ", "Đăng tải chia sẻ lên mạng xã hội", "Kịp thời cung cấp thông tin cho cơ quan chức năng"], correct: 3},
+
+        // --- AN TOÀN GIAO THÔNG ---
+        {cat: "An toàn giao thông", q: "Người điều khiển xe mô tô sử dụng điện thoại di động bị phạt bao nhiêu (NĐ 100)?", options: ["100.000 - 200.000đ", "400.000 - 600.000đ", "1.000.000 - 2.000.000đ", "2.000.000 - 3.000.000đ"], correct: 2},
+        {cat: "An toàn giao thông", q: "Chở theo từ 3 người trở lên trên xe máy bị phạt bao nhiêu?", options: ["100.000 - 200.000đ", "200.000 - 300.000đ", "400.000 - 600.000đ", "600.000 - 1.000.000đ"], correct: 2},
+        {cat: "An toàn giao thông", q: "Nồng độ cồn quá 80mlg/100ml máu bị phạt bao nhiêu?", options: ["2 - 3 triệu", "4 - 5 triệu", "6 - 8 triệu", "8 - 10 triệu"], correct: 2},
+
+        // --- BẢO VỆ MÔI TRƯỜNG ---
+        {cat: "Môi trường", q: "Khái niệm 'Môi trường bao gồm các yếu tố vật chất tự nhiên và nhân tạo...' thuộc Luật nào?", options: ["Luật BVMT 2014", "Luật BVMT 2018", "Luật BVMT 2020", "Luật BVMT 2022"], correct: 2},
+        {cat: "Môi trường", q: "Điều 43 Hiến pháp 2013 quy định mọi người có quyền gì?", options: ["Sống trong môi trường ổn định", "Sống trong môi trường trong lành và có nghĩa vụ bảo vệ môi trường", "Sống trong môi trường phát triển kinh tế", "Sống trong môi trường không thay đổi"], correct: 1},
+        {cat: "Môi trường", q: "Trách nhiệm của sinh viên đối với môi trường là gì?", options: ["Xây dựng CLB môi trường, thu gom xử lí chất thải", "Chỉ cần học tập lý thuyết", "Phê phán chính sách nhà nước", "Bỏ qua các vấn đề môi trường nhỏ"], correct: 0},
+
+        // --- AN NINH PHI TRUYỀN THỐNG ---
+        {cat: "An ninh phi truyền thống", q: "Đặc điểm của an ninh phi truyền thống là gì?", options: ["Dễ đối phó bằng quân sự", "Khó đối phó hay giải quyết đơn phương bằng biện pháp quân sự", "Chỉ ảnh hưởng đến 1 quốc gia", "Không liên quan đến kinh tế"], correct: 1},
+        {cat: "An ninh phi truyền thống", q: "Bản chất của an ninh phi truyền thống là gì?", options: ["Quân sự là chủ yếu", "Chạy đua vũ trang", "Phi quân sự, xuyên quốc gia", "Tranh chấp lãnh thổ"], correct: 2},
+        {cat: "An ninh phi truyền thống", q: "Đại dịch Covid-19 là vấn đề an ninh phi truyền thống ở quy mô nào?", options: ["Khu vực", "Châu lục", "Toàn cầu", "Quốc gia"], correct: 2},
+
+        // --- DÂN TỘC - TÔN GIÁO ---
+        {cat: "Dân tộc - Tôn giáo", q: "Quan điểm 'Các dân tộc hoàn toàn bình đẳng...' là của ai?", options: ["C. Mác", "V.I Lênin", "Ph. Ăngghen", "Hồ Chí Minh"], correct: 1},
+        {cat: "Dân tộc - Tôn giáo", q: "Câu nói 'Tôn giáo là thuốc phiện của nhân dân' là của ai?", options: ["Ph. Ăngghen", "V.I Lênin", "C. Mác", "Hồ Chí Minh"], correct: 2},
+        {cat: "Dân tộc - Tôn giáo", q: "Việt Nam hiện nay có mấy tôn giáo lớn? Tôn giáo nào là nội sinh?", options: ["6: Phật giáo và Hòa Hảo", "6: Cao Đài và Hòa Hảo", "5: Công giáo và Phật giáo", "7: Cao Đài và Hồi giáo"], correct: 1},
+        {cat: "Dân tộc - Tôn giáo", q: "Nội dung cốt lõi của công tác tôn giáo là gì?", options: ["Công tác tổ chức", "Công tác tư tưởng", "Công tác vận động quần chúng", "Công tác xây dựng cơ sở"], correct: 2},
+
+        // --- QUAN ĐIỂM MÁC LÊNIN - HCM ---
+        {cat: "Mác Lênin - HCM", q: "Chọn câu sai về học thuyết bảo vệ Tổ quốc XHCN của Lênin?", options: ["Là tất yếu khách quan", "Là nghĩa vụ của toàn dân", "Đảng lãnh đạo mọi mặt", "Là nhiệm vụ riêng của lực lượng vũ trang"], correct: 3},
+        {cat: "Mác Lênin - HCM", q: "Quân đội nhân dân Việt Nam có mấy nhiệm vụ, chức năng?", options: ["3 nhiệm vụ, 2 chức năng", "2 nhiệm vụ, 3 chức năng", "3 nhiệm vụ, 3 chức năng", "2 nhiệm vụ, 2 chức năng"], correct: 0},
+        {cat: "Mác Lênin - HCM", q: "Nguồn gốc nảy sinh chiến tranh theo C.Mác-V.I Lênin là gì?", options: ["Chế độ công hữu", "Chế độ tư hữu về tư liệu sản xuất và đối kháng giai cấp", "Bản năng sinh vật", "Định mệnh"], correct: 1},
+
+        // --- QUỐC PHÒNG TOÀN DÂN ---
+        {cat: "Quốc phòng toàn dân", q: "Khái niệm nền quốc phòng toàn dân mang tính chất gì?", options: ["Toàn dân, toàn diện, độc lập, tự chủ, tự lực, tự cường", "Chỉ tập trung vào quân sự", "Dựa hoàn toàn vào ngoại giao", "Phát triển kinh tế là chính"], correct: 0},
+        {cat: "Quốc phòng toàn dân", q: "Nền quốc phòng toàn dân, an ninh nhân dân chỉ có mục đích duy nhất là gì?", options: ["Phòng ngừa chiến tranh", "Tự vệ chính đáng", "Bảo vệ tài sản", "Giữ vững an ninh xã hội"], correct: 1},
+        {cat: "Quốc phòng toàn dân", q: "Cơ chế lãnh đạo nền QPTD và ANND do tổ chức nào lãnh đạo?", options: ["Quân đội chỉ huy", "Đảng lãnh đạo, nhà nước thống nhất quản lý", "Nhân dân tự nguyện", "Bộ quốc phòng"], correct: 1},
+
+        // --- CHIẾN TRANH NHÂN DÂN ---
+        {cat: "Chiến tranh nhân dân", q: "Lực lượng nòng cốt của chiến tranh nhân dân là gì?", options: ["Bộ đội chủ lực", "Dân quân tự vệ", "Lực lượng vũ trang nhân dân", "Công an nhân dân"], correct: 2},
+        {cat: "Chiến tranh nhân dân", q: "Tiêu chí phân biệt tính chất chiến tranh chính nghĩa và phi nghĩa là gì?", options: ["Chủng loại vũ khí", "Hoàn cảnh tiến hành", "Mục đích của cuộc chiến tranh", "Quy mô chiến tranh"], correct: 2},
+        {cat: "Chiến tranh nhân dân", q: "Tiến hành chiến tranh nhân dân lấy gì là chủ yếu?", options: ["Đấu tranh kinh tế", "Đấu tranh quân sự", "Đấu tranh ngoại giao", "Đấu tranh chính trị"], correct: 1},
+
+        // --- XÂY DỰNG LLVT ---
+        {cat: "Xây dựng LLVT", q: "LLVT nhân dân Việt Nam do tổ chức nào lãnh đạo?", options: ["Quốc hội", "Chính phủ", "Đảng Cộng sản Việt Nam", "Mặt trận Tổ quốc"], correct: 2},
+        {cat: "Xây dựng LLVT", q: "Đảng lãnh đạo LLVTND theo nguyên tắc nào?", options: ["Tuyệt đối, toàn diện", "Tuyệt đối, trực tiếp về mọi mặt", "Trực tiếp, toàn diện", "Gián tiếp, toàn diện"], correct: 1},
+        {cat: "Xây dựng LLVT", q: "Phương hướng xây dựng quân đội đến 2025 là gì?", options: ["Nhanh, hiện đại, chính xác", "Đông, mạnh", "Tinh, gọn, mạnh", "Cơ động, nhanh nhẹn"], correct: 2},
+
+        // --- KINH TẾ VỚI QUỐC PHÒNG ---
+        {cat: "Kinh tế - Quốc phòng", q: "Trong mối quan hệ giữa kinh tế và quốc phòng, yếu tố nào quyết định?", options: ["Văn hóa", "Kinh tế", "Khoa học", "Ngoại giao"], correct: 1},
+        {cat: "Kinh tế - Quốc phòng", q: "Kế sách 'ngụ binh ư nông' được thực hiện đầu tiên ở triều đại nào?", options: ["Nhà Đinh", "Nhà Lý", "Nhà Hậu Lê", "Nhà Trần"], correct: 2},
+        {cat: "Kinh tế - Quốc phòng", q: "Khi xây dựng công trình quốc phòng phải bảo đảm tính gì?", options: ["Thẩm mỹ", "Thị trường", "Lưỡng dụng", "Cạnh tranh"], correct: 2},
+
+        // --- NGHỆ THUẬT QUÂN SỰ ---
+        {cat: "Nghệ thuật quân sự", q: "Khởi nghĩa Lam Sơn 1418-1427 do ai lãnh đạo?", options: ["Trần Quốc Tuấn", "Lê Lợi - Nguyễn Trãi", "Quang Trung", "Lý Thường Kiệt"], correct: 1},
+        {cat: "Nghệ thuật quân sự", q: "Chiến dịch Điện Biên Phủ 1954 là loại hình chiến dịch gì?", options: ["Phòng ngự", "Phản công", "Tiến công", "Nghi binh"], correct: 2},
+        {cat: "Nghệ thuật quân sự", q: "Trong Điện Biên Phủ, ta đổi phương châm từ 'đánh nhanh' sang gì?", options: ["Đánh mạnh", "Đánh chắc, tiến chắc", "Đánh lén", "Đánh chạy"], correct: 1},
+
+        // --- DÂN QUÂN TỰ VỆ ---
+        {cat: "Dân quân tự vệ", q: "Lực lượng vũ trang quần chúng không thoát ly sản xuất là gì?", options: ["Bộ đội chủ lực", "Bộ đội địa phương", "Dân quân tự vệ", "Dự bị động viên"], correct: 2},
+        {cat: "Dân quân tự vệ", q: "Độ tuổi tham gia Dân quân tự vệ trong thời bình (Nam, Nữ) là gì?", options: ["18-45, 18-35", "18-35, 18-25", "18-40, 18-30", "18-25, 18-20"], correct: 0},
+        {cat: "Dân quân tự vệ", q: "Ai là người phát lệnh tổng động viên?", options: ["Tổng bí thư", "Chủ tịch nước", "Thủ tướng", "Bộ trưởng Bộ Quốc phòng"], correct: 1},
+
+        // --- AN NINH QUỐC GIA ---
+        {cat: "An ninh quốc gia", q: "Nội dung nào trong bảo vệ an ninh quốc gia là quan trọng nhất?", options: ["An ninh kinh tế", "An ninh biên giới", "An ninh chính trị nội bộ", "An ninh văn hóa"], correct: 2},
+        {cat: "An ninh quốc gia", q: "Cơ quan chuyên trách bảo vệ an ninh biên giới đất liền là gì?", options: ["Công an Nhân dân", "Bộ đội Biên phòng", "Hải quan", "Dân quân tự vệ"], correct: 1}
+    ];
+
+    const form = document.getElementById('quizForm');
+    const searchBox = document.getElementById('searchBox');
+    const categoryFilter = document.getElementById('categoryFilter');
+    const toggleBtn = document.getElementById('toggleAnswerBtn');
+    let showAnswersMode = false;
+
+    // Đổ dữ liệu vào Select chuyên đề
+    const categories = [...new Set(quizData.map(item => item.cat))];
+    categories.forEach(cat => {
+        let option = document.createElement('option');
+        option.value = cat;
+        option.textContent = cat;
+        categoryFilter.appendChild(option);
+    });
+
+    function renderQuiz() {
+        const searchText = searchBox.value.toLowerCase();
+        const selectedCat = categoryFilter.value;
+
+        const filteredData = quizData.filter(item => {
+            const matchCat = (selectedCat === 'all') || (item.cat === selectedCat);
+            const matchSearch = item.q.toLowerCase().includes(searchText) || item.options.join(" ").toLowerCase().includes(searchText);
+            return matchCat && matchSearch;
+        });
+
+        form.innerHTML = '';
+        if (filteredData.length === 0) {
+            form.innerHTML = '<p style="text-align:center; color:red;">Không tìm thấy câu hỏi phù hợp.</p>';
+            return;
+        }
+
+        filteredData.forEach((item, index) => {
+            const qBox = document.createElement('div');
+            qBox.className = 'question-box' + (showAnswersMode ? ' show-answer' : '');
+            qBox.id = `q${index}`;
+            
+            let optionsHtml = item.options.map((opt, i) => `
+                <label class="${i === item.correct ? 'correct' : ''}">
+                    <input type="radio" name="q${index}" value="${i}"> ${opt}
+                </label>
+            `).join('');
+
+            qBox.innerHTML = `
+                <div class="question-text">Câu ${index + 1}: ${item.q}</div>
+                <div class="options">
+                    ${optionsHtml}
+                </div>
+            `;
+            form.appendChild(qBox);
+        });
+    }
+
+    function toggleAnswers() {
+        showAnswersMode = !showAnswersMode;
+        if (showAnswersMode) {
+            toggleBtn.classList.add('active');
+            toggleBtn.innerText = "Tắt hiển thị đáp án";
+        } else {
+            toggleBtn.classList.remove('active');
+            toggleBtn.innerText = "Bật hiển thị đáp án (Đỏ)";
+        }
+        renderQuiz(); // Render lại để áp dụng CSS màu đỏ
+    }
+
+    function checkAnswers() {
+        let score = 0;
+        const questions = document.querySelectorAll('.question-box');
+        
+        questions.forEach(qBox => {
+            const index = qBox.id.replace('q', '');
+            const correctIndex = quizData[index].correct;
+            const labels = qBox.querySelectorAll('.options label');
+            const selectedInput = qBox.querySelector(`input[name="q${index}"]:checked`);
+
+            // Xóa class cũ nếu có
+            labels.forEach(label => label.classList.remove('user-correct', 'user-wrong'));
+
+            if (selectedInput) {
+                const selectedIndex = parseInt(selectedInput.value);
+                if (selectedIndex === correctIndex) {
+                    score++;
+                    labels[selectedIndex].classList.add('user-correct');
+                } else {
+                    labels[selectedIndex].classList.add('user-wrong');
+                    labels[correctIndex].classList.add('user-correct'); // Chỉ màu đỏ nếu sai
+                }
+            } else {
+                // Nếu không chọn, vẫn hiện đáp án đúng
+                labels[correctIndex].classList.add('user-correct');
+            }
+        });
+
+        const resultDiv = document.getElementById('result');
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `🎯 KẾT QUẢ: Bạn đạt <strong>${score}/${questions.length}</strong> câu đúng!`;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    searchBox.addEventListener('input', renderQuiz);
+    categoryFilter.addEventListener('change', renderQuiz);
+
+    // Render lần đầu
+    renderQuiz();
+</script>
+
+</body>
+</html>
