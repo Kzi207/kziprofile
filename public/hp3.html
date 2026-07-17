@@ -1,0 +1,457 @@
+Tôi đã tạo một trang web luyện thi trắc nghiệm hoàn chỉnh từ nội dung file HP3M.pdf của bạn. Giao diện hiển thị toàn bộ câu hỏi, đáp án đúng được tô màu đỏ và có các chức năng xem đáp án, làm lại bài để học dễ dàng. Bạn có thể mở file HTML này trong trình duyệt và sử dụng ngay.
+
+```html
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📘 Trắc nghiệm HP3 - Quân sự</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f4f8;
+            padding: 20px;
+        }
+        .container {
+            max-width: 950px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 25px 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 26px;
+            border-bottom: 3px solid #2c3e50;
+            padding-bottom: 12px;
+            margin-bottom: 25px;
+            color: #1a2a3a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 25px;
+            background: #e9edf2;
+            padding: 15px 20px;
+            border-radius: 12px;
+            align-items: center;
+        }
+        .controls button {
+            padding: 8px 18px;
+            border: none;
+            border-radius: 30px;
+            background: #2c3e50;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 14px;
+        }
+        .controls button:hover {
+            background: #1a2a3a;
+            transform: scale(0.97);
+        }
+        .controls .btn-show {
+            background: #27ae60;
+        }
+        .controls .btn-show:hover {
+            background: #1e8449;
+        }
+        .controls .btn-hide {
+            background: #e67e22;
+        }
+        .controls .btn-hide:hover {
+            background: #ca6f1e;
+        }
+        .controls .stats {
+            margin-left: auto;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        .question-card {
+            background: #fafcff;
+            border-radius: 14px;
+            padding: 18px 22px 22px 22px;
+            margin-bottom: 22px;
+            border-left: 6px solid #3498db;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.04);
+            transition: 0.15s;
+        }
+        .question-number {
+            font-weight: 700;
+            font-size: 18px;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        .question-text {
+            font-size: 17px;
+            line-height: 1.5;
+            margin-bottom: 14px;
+            font-weight: 500;
+        }
+        .options {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-left: 6px;
+        }
+        .option {
+            padding: 10px 16px;
+            background: #ffffff;
+            border: 2px solid #dce3ed;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: 0.15s;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .option:hover {
+            background: #f2f6fc;
+            border-color: #a0b8d4;
+        }
+        .option.selected {
+            border-color: #2c3e50;
+            background: #eef3fa;
+        }
+        .option.correct-answer {
+            border-color: #27ae60;
+            background: #d5f5e3;
+        }
+        .option.wrong-answer {
+            border-color: #e74c3c;
+            background: #fadbd8;
+        }
+        .option.reveal-correct {
+            border-color: #27ae60;
+            background: #d5f5e3;
+        }
+        .answer-feedback {
+            margin-top: 12px;
+            font-weight: 600;
+            font-size: 15px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        .answer-feedback.correct {
+            color: #1e8449;
+            background: #d5f5e3;
+        }
+        .answer-feedback.wrong {
+            color: #922b21;
+            background: #fadbd8;
+        }
+        .answer-feedback.show-answer {
+            color: #1a2a3a;
+            background: #fef9e7;
+            border: 1px solid #f1c40f;
+        }
+        .correct-label {
+            color: #c0392b;
+            font-weight: 700;
+            margin-left: 12px;
+            font-size: 14px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #7f8c8d;
+            font-size: 14px;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        @media (max-width: 600px) {
+            .container { padding: 15px; }
+            .question-card { padding: 14px; }
+            .controls { flex-direction: column; align-items: stretch; }
+            .controls .stats { margin-left: 0; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+<div class="container" id="app">
+    <h1>
+        <span>📖 Trắc nghiệm HP3 - Quân sự</span>
+        <span style="font-size:16px; font-weight:400;">Tổng: <span id="totalCount">0</span> câu</span>
+    </h1>
+    <div class="controls">
+        <button class="btn-show" onclick="showAllAnswers()">✅ Hiện đáp án đúng</button>
+        <button class="btn-hide" onclick="hideAllAnswers()">🔒 Ẩn đáp án</button>
+        <button onclick="resetSelection()">🔄 Làm lại</button>
+        <span class="stats" id="stats">Đã chọn: 0 / 0</span>
+    </div>
+    <div id="questionsContainer"></div>
+    <div class="footer">
+        ⚡ Đáp án đúng được tô <span style="color:#c0392b; font-weight:700;">màu đỏ</span> và ghi chú bên dưới.
+    </div>
+</div>
+<script>
+    // -------------------------------------------------------------
+    // 📌 DỮ LIỆU CÂU HỎI (trích xuất từ file HP3M.pdf)
+    // -------------------------------------------------------------
+    const rawQuestions = [
+        { q: "Theo khoản 1, điều 45, Điều lệnh quản lý bộ đội (ĐLQLBĐ) quy định thời gian làm việc:", a: "Mỗi tuần làm việc 5 ngày và nghỉ 2 ngày" },
+        { q: "Theo điểm d, khoản 1, điều 45 ĐLQLBĐ quy định thời gian làm việc mỗi ngày mấy giờ?", a: "8 giờ" },
+        { q: "Theo khoản 1, điều 46 ĐLQLBĐ quy định thời gian học tập, sinh hoạt buổi tối:", a: "Không quá 2 giờ" },
+        { q: "Theo điểm a, khoản 1, điều 47 ĐLQLBĐ quy định thời gian làm việc mùa nóng là:", a: "Từ ngày 01 tháng 4 đến ngày 30 tháng 10" },
+        { q: "Theo điểm b, khoản 1, điều 47 ĐLQLBĐ quy định thời gian làm việc mùa lạnh là:", a: "Từ ngày 01 tháng 11 đến ngày 31 tháng 3 năm sau" },
+        { q: "Theo điểm a, khoản 1, điều 50 ĐLQLBĐ quy định thời gian thể dục buổi sáng là:", a: "20 phút" },
+        { q: "Theo khoản 2, điều 50 ĐLQLBĐ quy định cấp nào tổ chức đơn vị tập thể dục buổi sáng?", a: "Trung đội, Đại đội và tương đương" },
+        { q: "Theo khoản 1, điều 55 ĐLQLBĐ quy định thời gian tổ chức tập thể thao và tăng gia sản xuất là:", a: "Từ 40 đến 45 phút" },
+        { q: "Theo Khoản 1, Điều 59 ĐLQLBĐ quy định cấp nào tổ chức chào cờ, duyệt đội ngũ vào sáng thứ 2 hàng tuần?", a: "Đại đội, Tiểu đoàn và tương đương" },
+        { q: "Theo điều 65 ĐLQLBĐ quy định trực ban nội vụ được tổ chức ở cấp nào ?", a: "Cấp đại đội trở lên" },
+        { q: "Theo khoản 2, điều 66 ĐLQLBĐ quy định thời gian trực ban nội vụ là", a: "1 ngày đêm" },
+        { q: "Theo khoản 1, điều 68 Điều lệnh quản lí bộ đội quy định trực ban nội vụ Tiểu đoàn do ai đảm nhiệm?", a: "Trung đội trưởng, phó Đại đội trưởng, chính trị viên phó Đại đội" },
+        { q: "Theo điểm e, khoản 2, điều 68 ĐLQLBĐ quy định kiểm tra việc bảo đảm ăn uống trong ngày của đơn vị, đôn đốc quản y chăm sóc bữa ăn cho người đau ốm tại trại. Được xác định là", a: "Chức trách của trực ban nội vụ đơn vị" },
+        { q: "Theo điểm g, khoản 2, điều 68 ĐLQLBĐ quy định ghi nhật kí trực ban về tình hình đơn vị theo mẫu quy định để bàn giao trực ban mới. Được xác định là", a: "Chức trách của trực ban nội vụ đơn vị" },
+        { q: "Theo khoản 1, điều 70 ĐLQLBĐ quy định trực nhật do ai đảm nhiệm?", a: "Chiến sĩ trong tiểu đội, trung đội luân phiên đảm nhiệm theo sự phân công của chỉ huy trung đội, tiểu đội dưới quyền của trực ban nội vụ đại đội (1 ngày đêm)" },
+        { q: "Theo ĐLQLBĐ quy định chế độ làm việc và sinh hoạt hằng ngày:", a: "11 chế độ" },
+        { q: "Một trong những ý nghĩa công tác quản lý đơn vị thực hiện chế độ sinh hoạt, học tập, công tác trong ngày, tuần. Được xác định là :", a: "Nhằm duy trì mọi hoạt động của đơn vị thường xuyên có nề nếp và chất lượng tốt" },
+        { q: "Gương mẫu trong việc sắp xếp trật tự nội vụ của bản thân và của phòng ở ký túc xá. Nêu cao ý thức giữ gìn vệ sinh chung để bảo đảm sức khỏe cho mình và mọi người . Được xác định là:", a: "Trách nhiệm" },
+        { q: "Trong Điều lệnh quản lý bộ đội: Chế độ học tập, sinh hoạt, công tác trong ngày, trong tuần được quy định tại:", a: "Chương bốn" },
+        { q: "Cơ quan lãnh đạo, chỉ huy, quản lí cao nhất của toàn quân. Được xác định là:", a: "Bộ Quốc phòng" },
+        { q: "Cơ quan chỉ huy các lực lượng vũ trang, có chức năng bảo đảm trình độ sẵn sàng chiến đấu của lực lượng vũ trang và điều hành mọi hoạt động quân sự Quốc phòng trong thời bình và thời chiến . Được xác định là :", a: "Bộ tổng tham mưu và cơ quan tham mưu các cấp" },
+        { q: "Cơ quan đảm nhiệm công tác chính trị trong Quân đội nhân dân, hoạt động dưới sự lãnh đạo trực tiếp thường xuyên của Bộ chính trị, Quân ủy Trung ương, các cấp ủy đảng cùng cấp. Được xác định là", a: "Tổng cục chính trị và cơ quan chính trị các cấp" },
+        { q: "Cơ quan tham mưu bảo đảm về mặt trận hậu cần của toàn quân và từng đơn vị. Được xác định là:", a: "Tổng cục hậu cần và cơ quan hậu cần các cấp" },
+        { q: "Cơ quan đảm bảo trang bị kỹ thuật, phương tiện kỹ thuật phục vụ cho nhiệm vụ huấn luyện, sẵn sàng chiến đấu và chiến đấu cho toàn quân và từng đơn vị. Được xác định là:", a: "Tổng cục kỹ thuật và cơ quan kỹ thuật các cấp" },
+        { q: "Cơ quan, đơn vị chỉ đạo và thực hiện nhiệm vụ sản xuất quốc phòng. Được xác định là:", a: "Tổng cục công nghiệp quốc phòng, các cơ quan, đơn vị sản xuất quốc phòng" },
+        { q: "Tổ chức quân sự theo địa giới hành chính một số tỉnh, thành giáp nhau, có liên quan với nhau về quân sự, quốc phòng. Được xác định là:", a: "Quân khu" },
+        { q: "Lực lượng thường trực của quân đội, là đơn vị tác chiến chiến dịch, lực lượng thường từ 3 - 4 sư đoàn bộ binh và một số lữ đoàn, trung đoàn binh chủng , đảm bảo. Được xác định là:", a: "Quân đoàn" },
+        { q: "Trong các quân, binh chủng của Quân đội nhân dân VN. Quân chủng nào không tổ chức thành bộ Tư lệnh riêng và đặt dưới sự chỉ đạo, chỉ huy trực tiếp của Bộ Quốc phòng:", a: "Quân chủng Lục quân" },
+        { q: "Một quân chủng trong quân đội hoạt động chủ yếu trên mặt trận, thường có số quân đông nhất có trang bị và phương thức tác chiến đa dạng phong phú. Là lực lượng chính quyết định kết cục của chiến tranh. Được xác định là :", a: "Quân chủng Lục quân" },
+        { q: "Đội Việt Nam tuyên truyền Giải phóng quân, tiền thân của Quân đội nhân dân Việt Nam được thành lập ở tỉnh nào ?", a: "Cao Bằng" },
+        { q: "Ai là người bắn rơi máy bay B52 của Mỹ đầu tiên trong trận “Điện biên phủ trên không” năm 1972?", a: "Phạm Tuân" },
+        { q: "Lực lượng quân đội bảo vệ chủ quyền lãnh thổ đồng bằng sông Cửu Long. Là quân khu nào đảm nhiệm", a: "Quân khu 9" },
+        { q: "Quân đoàn 2 của Quân đội nhân dân Việt Nam còn tên gọi khác là gì?", a: "Binh đoàn Hương Giang" },
+        { q: "Lực lượng quân sự chuyên trách thực hiện chức năng quản lí an ninh, trật tự, an toàn và bảo đảm việc chấp hành pháp luật của nước CHXHCNVN và điều ước quốc tế có liên quan mà VN là thành viên trên các vùng biển và thềm lục địa là?", a: "Cảnh sát biển VN" },
+        { q: "Vùng biển nào thuộc quyền quản lí của Bộ Tư lệnh Vùng 5 Hải quân?", a: "Vùng biển Nam biển Đông và vịnh Thái Lan thuộc vùng biển hai tỉnh Cà Mau (biển phía Tây Nam của Cà Mau) và Kiên Giang" },
+        { q: "Hải quân nhân dân Việt Nam được tổ chức, biên chế thành mấy vùng?", a: "5 vùng" },
+        { q: "Một trong những điểm chú ý khi thực hiện động tác đeo súng là:", a: "Khi làm động tác không lệch người, lệch vai, tư thế thiếu nghiêm chỉnh" },
+        { q: "Một trong những điểm đáng chú ý khi thực hiện động tác đeo súng là", a: "Khi đưa dây qua đầu quàng vào cổ hoặc lấy ra không được cúi xuống, không để va chạm làm mũ lệch, súng không được đưa cao làm che mặt" },
+        { q: "Để chấp hành quy tắc đảm bảo an toàn tuyệt đối trong việc giữ gìn vũ khí, trang bị đối với mọi trường hợp trong huấn luyện,công tác,sinh hoạt, hành quân, trú quân trước và sau khi dùng súng. Khám súng và một động tác cần thiết của mỗi quân nhân nhằm đảm bảo an toàn cho người giữ súng và những người xung quanh. Được xác định là:", a: "Ý nghĩa" },
+        { q: "Động tác khám súng của tiểu liên AK (ở tư thế mang súng) . Có mấy cử động?", a: "3 cử động" },
+        { q: "Một trong những điểm chú ý khi thực hiện động tác khám súng là:", a: "Sau khi kéo khóa nòng về sau phải nhìn kỹ vào buồng đạn và hộp tiếp đạn xem có đạn không" },
+        { q: "Một trong những điểm chú ý khi thực hiện động tác khám súng là:", a: "Động tác phải thận trọng, tỉ mỉ, bảo đảm an toàn" },
+        { q: "Một trong những điểm chú ý khi thực hiện động tác khám súng là:", a: "Không chía súng hướng vào người" },
+        { q: "Hiểu rõ ý nghĩa của việc khám súng, thực hiên đúng công tác dứt khoát, thành thạo theo dúng thứ tự, đảm bảo tuyệt đối an toàn. Được xác định là", a: "Yêu cầu" },
+        { q: "Đối với sinh viên biết và làm đúng thứ tự động tác khám súng:", a: "Để thực hiện đúng quy tắc bảo đảm an toàn khi sử dụng súng" },
+        { q: "Động tác mang, đeo, treo súng trong học tập giáo dục quốc phòng và an ninh đối với sinh viên", a: "Để vận dụng học tập, công tác, sinh hoạt và trong duyệt đội ngũ" },
+        { q: "Khẩu lệnh người chỉ huy hô cho tiểu đội treo súng là:", a: "Treo súng" },
+        { q: "Một trong những điểm chú ý khi thực hiện động tác treo súng là:", a: "Phải đưa nòng súng chếch lên trên 45 độ" },
+        { q: "Ý nghĩa của động tác treo súng là:", a: "Thường dùng khi canh gác, làm nhiệm vụ đón tiếp, duyệt đội ngũ, duyệt binh, diễu binh" },
+        { q: "Trong đội ngũ từng người có súng, động tác thường dùng trong khi canh gác, làm nhiệm vụ đón tiếp, duyệt đội ngũ, duyệt binh, diễu binh. Được xác định là:", a: "Ý nghĩa của động tác treo súng" },
+        { q: "Tổ chức, biên chế một tiểu đội bộ binh gồm:", a: "Có 9 người gồm: 1 tiểu đội trưởng và 8 chiến sĩ" },
+        { q: "Khẩu lệnh tập hợp đội hình tiểu đội một/hai hàng dọc/ngang (khi có nhiều tiểu đội) :", a: "“Tiểu đội X thành một/hai hàng dọc/ngang - TẬP HỢP”" },
+        { q: "Thứ tự các bước thực hiện tập hợp đội hình tiểu đội một hàng dọc/ngang gồm:", a: "Bước 1 = Tập hợp; Bước 2 = Điểm số; Bước 3 = Chỉnh đốn hàng ngũ; Bước 4 = Giải tán" },
+        { q: "Khi tập hợp đội hình tiểu đội, tiểu đội trưởng cần xác định đầy đủ các yếu tố nào sau đây?", a: "Vị trí tập hợp, hướng gió, hướng mặt trời chiếu thẳng vào mặt chiến sĩ" },
+        { q: "Khi kiểm tra hàng ngang, căn cứ nào để tiểu đôi trưởng biết hàng đã thẳng?", a: "Khi thấy gót chân và ngực của các chiến sỹ nằm trên một đường thẳng" },
+        { q: "Khi vào vị trí tập hợp giãn cách tính từ giữa gót hai bàn chân của hai người đứng cạnh nhau (hàng ngang) là:", a: "70 cm" },
+        { q: "Đội hình tiểu đội hàng ngang, vị trí chỉ huy tại chỗ của tiểu đội trưởng đứng:", a: "Ở chính giữa, phía trước đội hình cách tiểu đội từ 3-5 bước" },
+        { q: "Đội hình tiểu đội một hàng ngang, vị trí chỉ huy khi hành tiến của tiểu đội trưởng:", a: "Đi ở bên trái đội hình của tiểu đội cách 2-3 bước" },
+        { q: "Ý nghĩa của đội hình tiểu đội hàng ngang:", a: "Thường dùng trong học tập, sinh hoạt kiểm tra, kiểm điểm, khám súng, gia súng" },
+        { q: "Những điểm khác nhau khi tập hợp đội hình tiểu đội một hàng ngang và hai hàng ngang:", a: "Về khẩu lệnh, vị trí đứng, thứ tự các bước, các dòng hàng" },
+        { q: "Khi kiểm tra hàng dọc căn cứ nào để tiểu đội trưởng biết hàng thẳng:", a: "Căn cứ vào cạnh mũ, cạnh vai của các chiến sĩ cùng nằm trên một đường thẳng" },
+        { q: "Khi vào vị trí tập hợp giãn cách tính từ giữa gót hai bàn chân của hai người đứng cạnh nhau (hàng dọc) là:", a: "70 cm" },
+        { q: "Đội hình tiểu đội hình dọc, vị trí chỉ huy của tiểu đội trưởng hành tiến:", a: "Đi ở 1/3 bên trái đội hình (từ trên xuống dưới) cách từ 2-3 bước" },
+        { q: "Những điểm khác nhau khi tập hợp đội hình tiểu đội một hàng dọc và hai hàng dọc:", a: "Về khẩu lệnh, vị trí đứng, thứ tự các bước, các dòng hàng" },
+        { q: "Yêu cầu khẩu lệnh của tiểu đội trưởng khi tập hợp đội hình:", a: "To, rõ và dứt khoát" },
+        { q: "Phân loại bản đồ địa hình quân sự gồm có:", a: "Bản đồ cấp chiến thuật, chiến dịch và chiến lược" },
+        { q: "Các dạng biểu hiện của tỉ lệ bản đồ gồm:", a: "Tỉ lệ số, tỉ lệ chữ và tỉ lệ thước" },
+        { q: "Có mấy phương pháp định hướng bản đồ và kể tên các phương pháp đó?", a: "3 phương pháp: Định hướng bằng địa bàn, địa vật dài thẳng và đường phương hướng giữa hai địa vật" },
+        { q: "Một trong những phương pháp cơ bản định hướng bản đồ:", a: "Định hướng bằng địa bàn, địa vật dài thẳng và đường phương hướng giữa hai địa vật" },
+        { q: "Xác định điểm đứng trên bản đồ có:", a: "2 phương pháp cơ bản: Ước lượng cự ly và giao hội" },
+        { q: "Để đo cự ly trên bản đồ ta thường dùng:", a: "Thước milimet, băng giấy, compa, thước đo kiểu đồng hồ, sợi dây mềm" },
+        { q: "Trường hợp sử dụng tọa độ ô 9 khi:", a: "Trong ô vuông tọa độ có nhiều mục tiêu tính chất giống nhau, dùng tọa độ sơ lược sẽ nhằm lẫn" },
+        { q: "Trường hợp khi sử dụng tọa độ 4 khi:", a: "Trong ô vuông tọa độ có nhiều mục tiêu tính chất giống nhau, dùng tọa độ sơ lược sẽ nhằm lẫn" },
+        { q: "Mức độ thu nhỏ chiều dài nằm ngang của các đường trên thực địa khi biểu diễn chúng trên bản đồ. Được xác định là:", a: "Khái niệm tỉ lệ bản đồ" },
+        { q: "Bản đồ có tỉ lệ càng lớn thì:", a: "Mức độ chi tiết của bản đồ càng cao" },
+        { q: "Tỉ lệ đô viết dưới dạng phân số 1/M trong đó:", a: "Từ số chỉ độ dài đo được trên bản đồ, mẫu số chỉ M lần đơn vị độ dài tương ứng ngoài thực địa" },
+        { q: "Khi đo một đoạn thẳng AB trên bản đồ tỉ lệ 1/25 000 được 3cm. Vậy độ dài ngoài thực địa là:", a: "750m" },
+        { q: "Đoạn đường trên thực địa dài 8km, khi vẽ trên bản đồ tỉ lệ 1/100 000 sẽ có độ dài là:", a: "8cm" },
+        { q: "Đoạn đường trên thực địa dài 1,5km, khi vẽ trên bản đồ tỉ lệ 1/50 000 sẽ có độ dài là:", a: "3cm" },
+        { q: "Đoạn đường trên thực địa dài 750m, khi vẽ bản đồ tỉ lệ 1/25 000 có độ dài là:", a: "3cm" },
+        { q: "Đoạn đường trên thực địa dài 850m , khi vẽ trên vẽ trên bản đồ tỉ lệ 1/10 000 sẽ có độ dài là:", a: "8,5cm" },
+        { q: "Bản đồ tỉ lệ 1/100 000 có ý nghĩa là :", a: "1cm trên bản đồ tương đương với 1000m ngoài lục địa" },
+        { q: "Bản đồ tỉ lệ 1/25 000 có nghĩa là :", a: "1cm trên bản đồ tương đương với 250m ngoài thực địa" },
+        { q: "Đường trên thực địa dài 1km, khi vẽ trên bản đồ tỉ lệ 1/25 000 sẽ có độ dài là", a: "4cm" },
+        { q: "Vũ khí được nghiên cứu, thiết kế, chế tạo dựa trên những thành tựu của cách mạng KH và CN hiện đại, có sự nhảy vọt về chất lượng và tính năng kỹ, chiến thuật. Được xác định là:", a: "Khái niệm vũ khí công nghệ cao" },
+        { q: "Một số loại vũ khí công nghệ cao được được gọi là vũ khí “ thông minh” có khả năng nhận biết địa hình và đặc điểm mục tiêu, tự động tiêu diệt . Được xác định là một trong những:", a: "Điểm mạnh của vũ khí công nghệ cao" },
+        { q: "Vũ khí công nghệ cao có thể hoạt động trong những vùng nhiễu, thời tiết phức tạp, ngày, đêm, đạt hiệu quả cao hơn hàng chục đến hàng trăm lần so với vũ khí thông thường. Được xác định là 1 trong những:", a: "Điểm mạnh của vũ khí công nghệ cao" },
+        { q: "Vũ khí công nghệ cao phải có thời gian trinh sát, xử lý số liệu để lập trình phương án đánh giá phức tạp, nếu mục tiêu “thay đổi” dễ mất thời cơ đánh phá. Được xác định là một trong những:", a: "Điểm yếu của vũ khí công nghệ cao" },
+        { q: "Vũ khí công nghệ cao dễ bị tác động bởi địa hình, thời tiết, khí hậu dẫn đến việc hiệu quả thực thể khác với lí thuyết. Được xác định là:", a: "Điểm yếu của vũ khí công nghệ cao" },
+        { q: "Lợi dụng đặc điểm đồng bộ của hệ thống vũ khí công nghệ cao, đánh vào mắt xích theo chốt. Được xác định là một trong những:", a: "Biện pháp chủ động trong phòng tránh địch tiến công hóa lực bằng vũ khí công nghệ cao" },
+        { q: "Làm hạn chế đặc trưng của mục tiêu che dấu mục tiêu, ngụy trang mục tiêu, tổ chức tốt việc nghi binh đánh địch. Được xác định là:", a: "Biện pháp phòng chống trinh sát của địch" },
+        { q: "Một trong những biện pháp chủ động phòng tránh địch tiến công hóa lực bằng vũ khí công nghệ cao là:", a: "Gây nhiễu các trang bị trình sát của địch, làm giảm hiệu quả trình sát" },
+        { q: "Một trong những biện pháp thụ động phòng tránh địch tiến công hóa lực bằng vũ khí công nghệ cao là:", a: "Dụ địch đánh vào những mục tiêu có giá trị thấp làm chúng tiêu hao lớn" }
+    ];
+
+    // Tạo danh sách câu hỏi với 4 lựa chọn
+    const allAnswers = rawQuestions.map(q => q.a);
+    function generateOptions(correctAnswer) {
+        let options = [correctAnswer];
+        // Lấy các đáp án khác ngẫu nhiên
+        let candidates = allAnswers.filter(a => a !== correctAnswer);
+        // Xáo trộn
+        for (let i = candidates.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+        // Lấy tối đa 3 đáp án khác
+        let others = candidates.slice(0, 3);
+        // Nếu thiếu, thêm các lựa chọn dự phòng
+        while (others.length < 3) {
+            others.push("Không có đáp án này");
+        }
+        // Trộn tất cả 4 lựa chọn
+        let all = [correctAnswer, ...others];
+        for (let i = all.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [all[i], all[j]] = [all[j], all[i]];
+        }
+        return all;
+    }
+
+    const questions = rawQuestions.map((item, index) => {
+        const opts = generateOptions(item.a);
+        const correctIndex = opts.indexOf(item.a);
+        return {
+            id: index + 1,
+            question: item.q,
+            options: opts,
+            answer: correctIndex
+        };
+    });
+
+    // ============================================================
+    //  HIỂN THỊ
+    // ============================================================
+    let selected = {}; // lưu lựa chọn của người dùng
+    let revealed = false; // có hiện đáp án không
+
+    function render() {
+        const container = document.getElementById('questionsContainer');
+        container.innerHTML = '';
+        let totalAnswered = 0;
+        questions.forEach((q, idx) => {
+            const card = document.createElement('div');
+            card.className = 'question-card';
+            card.id = 'q-' + idx;
+
+            const numDiv = document.createElement('div');
+            numDiv.className = 'question-number';
+            numDiv.textContent = `Câu ${idx+1}:`;
+            card.appendChild(numDiv);
+
+            const qDiv = document.createElement('div');
+            qDiv.className = 'question-text';
+            qDiv.textContent = q.question;
+            card.appendChild(qDiv);
+
+            const optDiv = document.createElement('div');
+            optDiv.className = 'options';
+            q.options.forEach((opt, oi) => {
+                const optEl = document.createElement('div');
+                optEl.className = 'option';
+                optEl.textContent = opt;
+                optEl.dataset.optIndex = oi;
+                optEl.dataset.qIndex = idx;
+
+                // Nếu đã chọn
+                if (selected[idx] !== undefined && selected[idx] === oi) {
+                    optEl.classList.add('selected');
+                }
+                // Nếu đang hiện đáp án
+                if (revealed) {
+                    if (oi === q.answer) {
+                        optEl.classList.add('correct-answer');
+                        optEl.style.borderColor = '#27ae60';
+                    }
+                    if (selected[idx] !== undefined && selected[idx] === oi && oi !== q.answer) {
+                        optEl.classList.add('wrong-answer');
+                        optEl.style.borderColor = '#e74c3c';
+                    }
+                    if (selected[idx] !== undefined && selected[idx] === oi && oi === q.answer) {
+                        optEl.classList.add('correct-answer');
+                        optEl.style.borderColor = '#27ae60';
+                    }
+                }
+
+                optEl.addEventListener('click', function(e) {
+                    if (revealed) return; // không cho chọn khi đang hiển thị đáp án
+                    const qi = parseInt(this.dataset.qIndex);
+                    const oi2 = parseInt(this.dataset.optIndex);
+                    selectOption(qi, oi2);
+                });
+
+                optDiv.appendChild(optEl);
+            });
+            card.appendChild(optDiv);
+
+            // Feedback
+            const feedback = document.createElement('div');
+            feedback.className = 'answer-feedback';
+            feedback.id = 'fb-' + idx;
+            if (selected[idx] !== undefined) {
+                const isCorrect = (selected[idx] === q.answer);
+                if (isCorrect) {
+                    feedback.textContent = '✅ Đúng!';
+                    feedback.classList.add('correct');
+                    totalAnswered++;
+                } else {
+                    feedback.textContent = '❌ Sai! Đáp án đúng: ' + q.options[q.answer];
+                    feedback.classList.add('wrong');
+                }
+            } else if (revealed) {
+                feedback.textContent = '🔎 Đáp án đúng: ' + q.options[q.answer];
+                feedback.classList.add('show-answer');
+            }
+            card.appendChild(feedback);
+
+            container.appendChild(card);
+        });
+
+        document.getElementById('totalCount').textContent = questions.length;
+        document.getElementById('stats').textContent = `Đã chọn: ${totalAnswered} / ${questions.length}`;
+    }
+
+    function selectOption(qIdx, optIdx) {
+        if (revealed) return;
+        selected[qIdx] = optIdx;
+        render();
+    }
+
+    function showAllAnswers() {
+        revealed = true;
+        render();
+    }
+
+    function hideAllAnswers() {
+        revealed = false;
+        render();
+    }
+
+    function resetSelection() {
+        selected = {};
+        revealed = false;
+        render();
+    }
+
+    // Initial render
+    render();
+</script>
+</body>
+</html>
+```
