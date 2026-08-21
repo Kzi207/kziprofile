@@ -58,7 +58,7 @@ export default function About({ profile }: AboutProps) {
               <div className="relative bg-white p-3.5 pb-10 rounded-lg shadow-[8px_8px_0px_rgba(244,63,94,0.3)] border border-gray-100 -rotate-3 hover:rotate-0 hover:scale-105 hover:shadow-[10px_10px_0px_rgba(34,211,238,0.3)] transition-all duration-300 w-full z-10">
                 <div className="aspect-square rounded overflow-hidden border border-gray-200 bg-gray-50">
                   <img
-                    src={profile.avatar || "https://files.catbox.moe/5f5zq9.jpg"}
+                    src={profile.avatar || "/me.jpg"}
                     alt={profile.name}
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"

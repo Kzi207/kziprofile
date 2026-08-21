@@ -97,7 +97,7 @@ export default function Header({
           {/* Logo */}
           <div className="flex items-center space-x-2 cursor-pointer" onClick={() => !isAdminView && scrollToSection("hero")}>
             <div className="relative flex items-center justify-center w-9 h-9 rounded-full overflow-hidden bg-gradient-to-tr from-blue-600 to-cyan-400 text-white font-bold text-xl shadow-[0_0_15px_rgba(34,211,238,0.5)]">
-              <img src="https://files.catbox.moe/5f5zq9.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              <img src="/me.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               <span className="absolute -inset-0.5 rounded-full bg-cyan-400/20 blur animate-pulse pointer-events-none" />
             </div>
             <div className="flex flex-col">
@@ -224,7 +224,7 @@ export default function Header({
           {/* Logo */}
           <div className="flex items-center space-x-2 cursor-pointer" onClick={() => !isAdminView && scrollToSection("hero")}>
             <div className="relative flex items-center justify-center w-8 h-8 rounded-full overflow-hidden bg-gradient-to-tr from-blue-600 to-cyan-400 text-white font-bold text-lg shadow-[0_0_15px_rgba(34,211,238,0.5)]">
-              <img src="https://files.catbox.moe/5f5zq9.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              <img src="/me.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               <span className="absolute -inset-0.5 rounded-full bg-cyan-400/20 blur animate-pulse pointer-events-none" />
             </div>
             <span className="font-mono font-black text-sm tracking-wider text-white">
@@ -300,7 +300,7 @@ export default function Header({
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <div className="relative flex items-center justify-center w-8 h-8 rounded-full overflow-hidden bg-gradient-to-tr from-blue-600 to-cyan-400 text-white font-bold text-lg shadow-[0_0_15px_rgba(34,211,238,0.5)]">
-                <img src="https://files.catbox.moe/5f5zq9.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src="/me.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 <span className="absolute -inset-0.5 rounded-full bg-cyan-400/20 blur animate-pulse pointer-events-none" />
               </div>
               <span className="font-mono font-black text-sm tracking-wider text-white">

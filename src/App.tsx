@@ -179,7 +179,7 @@ export default function App() {
   };
 
   if (loading) {
-    const avatarUrl = profile?.avatar || "https://files.catbox.moe/5f5zq9.jpg";
+    const avatarUrl = profile?.avatar || "/me.jpg";
     return (
       <div className="fixed inset-0 bg-[#070312] flex flex-col items-center justify-center space-y-6">
         {/* Glowing circular avatar */}
@@ -223,7 +223,7 @@ export default function App() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#070d1d]/90 border border-cyan-500/20 p-5 rounded-lg backdrop-blur-md shadow-[0_0_20px_rgba(34,211,238,0.1)]">
               <div className="flex items-center space-x-3">
                 <div className="relative flex items-center justify-center w-10 h-10 rounded-full overflow-hidden bg-gradient-to-tr from-blue-600 to-cyan-400 text-white font-bold text-xl shadow-[0_0_15px_rgba(34,211,238,0.5)]">
-                  <img src="https://files.catbox.moe/5f5zq9.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img src="/me.jpg" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   <span className="absolute -inset-0.5 rounded-full bg-cyan-400/20 blur animate-pulse pointer-events-none" />
                 </div>
                 <div>

@@ -36,7 +36,7 @@ async function main() {
       name: "Lê Khánh Duy",
       nickname: "Kzi",
       email: "toi05022020@gmail.com",
-      avatar: "https://files.catbox.moe/5f5zq9.jpg",
+      avatar: "/me.jpg",
       birthday: "2007-11-22",
       address: "Cần Thơ, Việt Nam",
       bio: "Sinh viên năm nhất ngành Công nghệ Kỹ thuật Cơ điện tử. Yêu thích lập trình Web Full-stack, AI, phát triển Bot Messenger và xây dựng các ứng dụng hiện đại.",
