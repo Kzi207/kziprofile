@@ -11,6 +11,10 @@ import { CHILL_LINKS_DEFAULT } from "./src/data/chill_links.js";
 import { GAI_LINKS_DEFAULT } from "./src/data/gai_links.js";
 import { MUSIC_LINKS_DEFAULT } from "./src/data/music_links.js";
 import { v2 as cloudinary } from "cloudinary";
+import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia } from "./api_dl/youtube.js";
+import { searchSoundCloud, getSoundCloudDownloadInfo, streamSoundCloudMedia } from "./api_dl/soundcloud.js";
+import { parseDownloadInput, renderDocHTML } from "./api_dl/index.js";
+
 
 // Load environment variables
 dotenv.config();
@@ -954,9 +958,80 @@ app.get("/api/dashboard", authenticateToken as any, async (req: Request, res: Re
 });
 
 
+
+// --- YOUTUBE & SOUNDCLOUD MEDIA DOWNLOADER API V1 ---
+app.get("/api/v1", (req: Request, res: Response) => renderDocHTML(req, res));
+app.get("/api/v1/", (req: Request, res: Response) => renderDocHTML(req, res));
+
+app.get("/api/v1/youtube/stream/:filename", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const filename = req.params.filename;
+    const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
+    const input = filename.replace(/\.(mp3|mp4)$/i, "");
+    return await streamYouTubeMedia(req, res, input, type);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/v1/youtube", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { search, download, stream, type, format } = req.query as any;
+
+    if (stream) {
+      const parsed = parseDownloadInput(stream, type, format);
+      return await streamYouTubeMedia(req, res, parsed.url, parsed.type);
+    }
+
+    if (download) {
+      const parsed = parseDownloadInput(download, type, format);
+      const info = await getYouTubeDownloadInfo(req, parsed.url, parsed.type);
+      return res.status(info.status ? 200 : 400).json(info);
+    }
+
+    const data = await searchYouTube(search as string);
+    return res.status(data.status ? 200 : 400).json(data);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/v1/soundcloud/stream/:filename", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const filename = req.params.filename;
+    const input = filename.replace(/\.mp3$/i, "");
+    return await streamSoundCloudMedia(req, res, input);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/v1/soundcloud", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { search, download, stream, type, format } = req.query as any;
+
+    if (stream) {
+      const parsed = parseDownloadInput(stream, type, format);
+      return await streamSoundCloudMedia(req, res, parsed.url);
+    }
+
+    if (download) {
+      const parsed = parseDownloadInput(download, type, format);
+      const info = await getSoundCloudDownloadInfo(req, parsed.url, parsed.type);
+      return res.status(info.status ? 200 : 400).json(info);
+    }
+
+    const data = await searchSoundCloud(search as string);
+    return res.status(data.status ? 200 : 400).json(data);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ==========================================
 // VITE OR STATIC FILE SERVING
 // ==========================================
+
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

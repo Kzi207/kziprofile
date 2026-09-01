@@ -1,0 +1,249 @@
+import { Readable } from "stream";
+import crypto from "crypto";
+import { Request, Response } from "express";
+import { DownloadInfoResult, MediaItem, SearchResult } from "./youtube.js";
+
+const SECRET_KEY = process.env.DOWNLOAD_SECRET_KEY || "media_dl_secret_15m";
+
+const CLIENT_IDS = [
+  process.env.SC_CLIENT_ID,
+  "Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo",
+  "iZ86MuBD7F8mqslBxkAovqEae68DHvZ1",
+  "J47n2y66g1R4h6j7R3289i1y",
+  "a3e059563d7fd3372b49b37f00a00bcf"
+].filter(Boolean) as string[];
+
+async function fetchWithClientId<T>(urlBuilder: (clientId: string) => string): Promise<T> {
+  let lastErr: any;
+  for (const clientId of CLIENT_IDS) {
+    try {
+      const url = urlBuilder(clientId);
+      const res = await fetch(url);
+      if (res.ok) {
+        return (await res.json()) as T;
+      }
+      if (res.status !== 401 && res.status !== 403) {
+        throw new Error(`SoundCloud HTTP ${res.status}`);
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("Không thể kết nối tới SoundCloud API.");
+}
+
+export function generateToken(id: string | number, expires: number): string {
+  return crypto.createHmac("sha256", SECRET_KEY).update(`${id}:${expires}`).digest("hex").slice(0, 16);
+}
+
+export function validateToken(id: string | number, req: Request, res: Response): boolean {
+  const { expires, token } = req.query;
+  if (expires || token) {
+    const expNum = Number(expires);
+    if (!expNum || isNaN(expNum) || Date.now() > expNum) {
+      res.status(410).json({
+        status: false,
+        message: "Link download đã hết hạn (chỉ có hiệu lực trong 15 phút). Vui lòng gọi API lấy link mới."
+      });
+      return false;
+    }
+    const expectedToken = generateToken(id, expNum);
+    if (token !== expectedToken) {
+      res.status(403).json({
+        status: false,
+        message: "Token xác thực link download không hợp lệ."
+      });
+      return false;
+    }
+  }
+  return true;
+}
+
+export function cleanName(name: string): string {
+  return (name || "")
+    .replace(/[<>:"/\\|?*]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+export function formatDuration(ms: number): string {
+  if (!ms || isNaN(ms)) return "00:00";
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  }
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
+
+export async function searchSoundCloud(query?: string): Promise<SearchResult> {
+  try {
+    const isHome = (!query || typeof query !== "string" || query.trim() === "" || query.trim().toLowerCase() === "home");
+    const searchTerm = isHome ? "nhạc trẻ thịnh hành" : query.trim();
+
+    const data = await fetchWithClientId<any>(clientId => 
+      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${clientId}&limit=20`
+    );
+
+    let rawTracks = data.collection || [];
+
+    let tracks: MediaItem[] = rawTracks.map((track: any) => {
+      const ms = track.duration || 0;
+      const sec = Math.floor(ms / 1000);
+      return {
+        id: String(track.id),
+        urn: track.urn,
+        title: track.title || "",
+        artist: track.user?.username || "",
+        duration: formatDuration(ms),
+        duration_seconds: sec,
+        thumbnail: track.artwork_url || track.user?.avatar_url || "",
+        url: track.permalink_url || ""
+      };
+    });
+
+    if (isHome) {
+      const validDuration = tracks.filter(t => (t.duration_seconds || 0) >= 120 && (t.duration_seconds || 0) <= 600);
+      const otherDuration = tracks.filter(t => (t.duration_seconds || 0) < 120 || (t.duration_seconds || 0) > 600);
+      tracks = [...validDuration, ...otherDuration];
+    }
+
+    const cleanData = tracks.map(({ duration_seconds, ...rest }) => rest);
+
+    return {
+      status: true,
+      type: isHome ? "home" : "search",
+      query: isHome ? "Bài hát đang thịnh hành (Home)" : searchTerm,
+      total: cleanData.length,
+      data: cleanData
+    };
+  } catch (error: any) {
+    console.error("Lỗi searchSoundCloud:", error);
+    return {
+      status: false,
+      type: "error",
+      query: query || "",
+      total: 0,
+      message: "Lỗi khi tìm kiếm SoundCloud: " + (error.message || "Unknown error"),
+      data: []
+    };
+  }
+}
+
+async function resolveTrackInfo(input: string): Promise<any> {
+  const cleanInput = String(input).trim();
+  if (/^\d+$/.test(cleanInput)) {
+    return await fetchWithClientId<any>(clientId => `https://api-v2.soundcloud.com/tracks/${cleanInput}?client_id=${clientId}`);
+  } else {
+    return await fetchWithClientId<any>(clientId => `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(cleanInput)}&client_id=${clientId}`);
+  }
+}
+
+export async function getSoundCloudDownloadInfo(req: Request, input: string, formatType: string = "mp3"): Promise<DownloadInfoResult> {
+  try {
+    if (!input) {
+      return { status: false, message: "Thiếu link hoặc Track ID SoundCloud." };
+    }
+
+    const track = await resolveTrackInfo(input);
+    if (!track) {
+      return { status: false, message: "Không tìm thấy bài hát trên SoundCloud." };
+    }
+
+    const title = track.title || "SoundCloud Track";
+    const author = track.user?.username || "Không rõ";
+    const duration = formatDuration(track.duration);
+    const artwork = track.artwork_url || track.user?.avatar_url || "";
+
+    const type = "mp3";
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    const expires = Date.now() + 15 * 60 * 1000;
+    const token = generateToken(track.id, expires);
+    const download_url = `${baseUrl}/api/v1/soundcloud/stream/${track.id}.mp3?expires=${expires}&token=${token}`;
+
+    return {
+      status: true,
+      id: String(track.id),
+      title: title,
+      author: author,
+      duration: duration,
+      thumbnail: artwork,
+      artwork: artwork,
+      type: type,
+      expires_in: "15 phút",
+      expires_at: new Date(expires).toISOString(),
+      download_url: download_url
+    };
+  } catch (error: any) {
+    console.error("Lỗi getSoundCloudDownloadInfo:", error);
+    return {
+      status: false,
+      message: "Không thể lấy thông tin download SoundCloud: " + (error.message || "Unknown error")
+    };
+  }
+}
+
+export async function streamSoundCloudMedia(req: Request, res: Response, input: string): Promise<void> {
+  if (!input) {
+    res.status(400).json({ status: false, message: "Thiếu link hoặc Track ID SoundCloud." });
+    return;
+  }
+
+  try {
+    const track = await resolveTrackInfo(input);
+    if (!track) {
+      res.status(404).json({ status: false, message: "Không tìm thấy bài hát SoundCloud." });
+      return;
+    }
+
+    if (!validateToken(track.id, req, res)) {
+      return;
+    }
+
+    const title = cleanName(track.title || "soundcloud_track");
+    const transcodings = track.media?.transcodings || [];
+    if (!transcodings.length) {
+      res.status(400).json({ status: false, message: "Không tìm thấy media stream cho bài hát này." });
+      return;
+    }
+
+    const prog = transcodings.find((t: any) => t.format?.protocol === "progressive") || transcodings[0];
+
+    const streamData = await fetchWithClientId<any>(clientId => `${prog.url}?client_id=${clientId}`);
+    const directUrl = streamData.url;
+
+    if (!directUrl) {
+      res.status(500).json({ status: false, message: "Không thể lấy direct URL để tải." });
+      return;
+    }
+
+    const mediaRes = await fetch(directUrl);
+    if (!mediaRes.ok || !mediaRes.body) {
+      res.status(500).json({ status: false, message: "Lỗi khi tải stream dữ liệu âm thanh." });
+      return;
+    }
+
+    const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
+    const encodedTitle = encodeURIComponent(title);
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Disposition", `inline; filename="${asciiTitle}.mp3"; filename*=UTF-8''${encodedTitle}.mp3`);
+    res.setHeader("Accept-Ranges", "bytes");
+
+    const nodeStream = Readable.fromWeb(mediaRes.body as any);
+    nodeStream.pipe(res);
+
+    res.on("close", () => {
+      try { nodeStream.destroy(); } catch {}
+    });
+  } catch (error: any) {
+    console.error("Lỗi streamSoundCloudMedia:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ status: false, message: "Lỗi stream SoundCloud media: " + error.message });
+    }
+  }
+}
