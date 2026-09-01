@@ -19,7 +19,7 @@ export async function getYT(): Promise<Innertube> {
     try {
       ytInstance = await Innertube.create({
         location: "VN",
-        retrieve_player: false
+        retrieve_player: true
       });
       return ytInstance;
     } catch (err) {
