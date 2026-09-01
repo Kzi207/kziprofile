@@ -256,7 +256,7 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10) || 0;
       res.status(206);
-      res.setHeader("Content-Range", `bytes ${start}-*/*`);
+      res.setHeader("Content-Range", `bytes ${start}-/*`);
     } else if (totalSize > 0) {
       res.setHeader("Content-Length", totalSize.toString());
     }

@@ -260,25 +260,21 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
       totalSize = Math.round(durationSec * 24000);
     }
 
-    if (range && totalSize > 0) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10) || 0;
-      const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
-      const chunksize = (end - start) + 1;
-      seekSeconds = Math.floor(start / 24000);
-
-      res.status(206);
-      res.setHeader("Content-Range", `bytes ${start}-${end}/${totalSize}`);
-      res.setHeader("Content-Length", chunksize.toString());
-    } else if (range) {
+    if (range) {
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10) || 0;
       seekSeconds = Math.floor(start / 24000);
 
-      res.status(206);
-      res.setHeader("Content-Range", `bytes ${start}-*/*`);
-    } else if (totalSize > 0) {
-      res.setHeader("Content-Length", totalSize.toString());
+      if (totalSize > 0) {
+        const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+        const chunksize = (end - start) + 1;
+        res.status(206);
+        res.setHeader("Content-Range", `bytes ${start}-${end}/${totalSize}`);
+        res.setHeader("Content-Length", chunksize.toString());
+      } else {
+        res.status(206);
+        res.setHeader("Content-Range", `bytes ${start}-/*`);
+      }
     }
 
     const downloadStream = await yt.download(videoId, {
