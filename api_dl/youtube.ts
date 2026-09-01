@@ -3,6 +3,7 @@ import { Readable } from "stream";
 import { spawn } from "child_process";
 import crypto from "crypto";
 import { Request, Response } from "express";
+import { searchSoundCloud, streamSoundCloudMedia } from "./soundcloud.js";
 
 // Tắt các log cảnh báo Parser của Youtubei.js
 Log.setLevel(Log.Level.NONE);
@@ -18,7 +19,7 @@ export async function getYT(): Promise<Innertube> {
     try {
       ytInstance = await Innertube.create({
         location: "VN",
-        retrieve_player: true
+        retrieve_player: false
       });
       return ytInstance;
     } catch (err) {
@@ -228,6 +229,54 @@ export interface DownloadInfoResult {
   message?: string;
 }
 
+export interface YouTubeMetadata {
+  title: string;
+  author: string;
+  duration: number;
+  thumbnail: string;
+}
+
+export async function getYouTubeMetadata(videoId: string): Promise<YouTubeMetadata> {
+  try {
+    const yt = await getYT();
+    const info = await yt.getBasicInfo(videoId);
+    if (info?.basic_info?.title) {
+      const thumbnails = info.basic_info.thumbnail || [];
+      const thumb = thumbnails.length ? thumbnails[thumbnails.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      return {
+        title: info.basic_info.title,
+        author: info.basic_info.author || "YouTube Artist",
+        duration: info.basic_info.duration || 0,
+        thumbnail: thumb
+      };
+    }
+  } catch (err: any) {
+    console.warn(`[YouTube Metadata Warning] getBasicInfo failed (${err.message}). Using Google oEmbed Fallback...`);
+  }
+
+  try {
+    const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        title: data.title || "YouTube Media",
+        author: data.author_name || "YouTube Artist",
+        duration: 0,
+        thumbnail: data.thumbnail_url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+      };
+    }
+  } catch (e: any) {
+    console.error("oEmbed fallback error:", e.message);
+  }
+
+  return {
+    title: "YouTube Media",
+    author: "YouTube Artist",
+    duration: 0,
+    thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+  };
+}
+
 export async function getYouTubeDownloadInfo(req: Request, input: string, formatType: string = "mp3"): Promise<DownloadInfoResult> {
   try {
     const videoId = extractVideoId(input);
@@ -235,15 +284,8 @@ export async function getYouTubeDownloadInfo(req: Request, input: string, format
       return { status: false, message: "Không tìm thấy Video ID từ link cung cấp." };
     }
 
-    const yt = await getYT();
-    const info = await yt.getBasicInfo(videoId);
-    const details = info.basic_info;
-
-    const title = details.title || "YouTube Video";
-    const author = details.author || "Không rõ";
-    const duration = formatDuration(details.duration || 0);
-    const thumbnails = details.thumbnail || [];
-    const thumbnail = thumbnails.length ? thumbnails[thumbnails.length - 1].url : "";
+    const meta = await getYouTubeMetadata(videoId);
+    const duration = formatDuration(meta.duration);
 
     const type = (formatType && formatType.toLowerCase() === "mp4") ? "mp4" : "mp3";
     const baseUrl = getBaseUrl(req);
@@ -256,10 +298,10 @@ export async function getYouTubeDownloadInfo(req: Request, input: string, format
     return {
       status: true,
       id: videoId,
-      title: title,
-      author: author,
+      title: meta.title,
+      author: meta.author,
       duration: duration,
-      thumbnail: thumbnail,
+      thumbnail: meta.thumbnail,
       type: type,
       expires_in: "15 phút",
       expires_at: new Date(expires).toISOString(),
@@ -287,10 +329,9 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
   }
 
   try {
-    const yt = await getYT();
-    const info = await yt.getBasicInfo(videoId);
-    const title = cleanName(info.basic_info.title || "youtube_media");
-    const durationSec = info.basic_info.duration || 0;
+    const meta = await getYouTubeMetadata(videoId);
+    const title = cleanName(meta.title || "youtube_media");
+    const durationSec = meta.duration || 0;
     const isMp4 = (formatType && formatType.toLowerCase() === "mp4");
     const ext = isMp4 ? "mp4" : "mp3";
 
@@ -301,18 +342,43 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
     const isDownload = ["2", "3", "true", "attachment"].includes(dlVal) || req.query.download === "1" || req.query.attachment === "1";
     const dispositionMode = isDownload ? "attachment" : "inline";
 
-    // Khởi tạo downloadStream trước khi đặt headers cho Response để kiểm tra tính hợp lệ của luồng dữ liệu
-    const downloadStream = await downloadYouTubeStream(yt, videoId, isMp4 ? "video+audio" : "audio");
-    const reader = (downloadStream as any).getReader();
+    let downloadStream: any = null;
+    let reader: any = null;
+    let firstChunk: Uint8Array | null = null;
 
-    // Đọc thử chunk đầu tiên để xác nhận YouTube không trả về 403 Forbidden hay 0-byte stream
-    const { done, value } = await reader.read();
+    try {
+      const yt = await getYT();
+      downloadStream = await downloadYouTubeStream(yt, videoId, isMp4 ? "video+audio" : "audio");
+      reader = (downloadStream as any).getReader();
+      const { done, value } = await reader.read();
+      if (!done && value && value.length > 0) {
+        firstChunk = value;
+      }
+    } catch (err: any) {
+      console.warn(`[YouTube Stream] Thất bại khi giải mã luồng YouTube (${err.message}). Đang thử chuyển sang SoundCloud Fallback...`);
+    }
 
-    if (done || !value || value.length === 0) {
+    // Nếu YouTube bị chặn giải mã trên Vercel và đây là yêu cầu âm thanh (mp3)
+    if (!firstChunk) {
+      if (!isMp4) {
+        try {
+          const searchQuery = `${meta.title} ${meta.author}`.trim();
+          console.log(`[YouTube Fallback] Tìm kiếm SoundCloud dự phòng cho: "${searchQuery}"...`);
+          const scResult = await searchSoundCloud(searchQuery);
+          if (scResult.status && scResult.data && scResult.data.length > 0) {
+            const scTrackUrl = scResult.data[0].url;
+            console.log(`[YouTube Fallback] Đã tìm thấy luồng SoundCloud dự phòng: ${scTrackUrl}`);
+            return await streamSoundCloudMedia(req, res, scTrackUrl, true);
+          }
+        } catch (scErr: any) {
+          console.error("Lỗi SoundCloud fallback:", scErr.message);
+        }
+      }
+
       if (!res.headersSent) {
         res.status(502).json({
           status: false,
-          message: "Luồng YouTube không khả dụng (0 bytes). YouTube đã chặn giải mã chữ ký trên môi trường Serverless."
+          message: "Luồng YouTube không khả dụng. YouTube đã chặn giải mã chữ ký trên môi trường Serverless."
         });
       }
       return;
@@ -351,7 +417,7 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
     }
 
     // Ghi chunk đầu tiên đã nhận được
-    res.write(value);
+    res.write(firstChunk);
 
     // Đóng gói các chunk còn lại từ Web Reader sang Node Stream
     const remainingStream = new Readable({

@@ -189,7 +189,7 @@ export async function getSoundCloudDownloadInfo(req: Request, input: string, for
   }
 }
 
-export async function streamSoundCloudMedia(req: Request, res: Response, input: string): Promise<void> {
+export async function streamSoundCloudMedia(req: Request, res: Response, input: string, skipTokenCheck: boolean = false): Promise<void> {
   if (!input) {
     res.status(400).json({ status: false, message: "Thiếu link hoặc Track ID SoundCloud." });
     return;
@@ -202,7 +202,7 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
       return;
     }
 
-    if (!validateToken(track.id, req, res)) {
+    if (!skipTokenCheck && !validateToken(track.id, req, res)) {
       return;
     }
 
