@@ -163,8 +163,8 @@ export async function getSoundCloudDownloadInfo(req: Request, input: string, for
 
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(track.id, expires);
-    const stream_url = `${baseUrl}/api/v1/soundcloud/stream/${track.id}.mp3?expires=${expires}&token=${token}`;
-    const download_url = `${stream_url}&dl=3`;
+    const stream_url = `${baseUrl}/api/v1/soundcloud/stream/${track.id}.mp3?expires=${expires}&token=${token}&dl=1`;
+    const download_url = `${baseUrl}/api/v1/soundcloud/stream/${track.id}.mp3?expires=${expires}&token=${token}&dl=2`;
 
     return {
       status: true,
@@ -232,8 +232,8 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
     const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
     const encodedTitle = encodeURIComponent(title);
 
-    const dlVal = String(req.query.dl || req.query.download || req.query.attachment || "").trim();
-    const isDownload = Boolean(dlVal) && dlVal !== "0" && dlVal !== "false" && dlVal !== "inline";
+    const dlVal = String(req.query.dl || "").trim();
+    const isDownload = ["2", "3", "true", "attachment"].includes(dlVal) || req.query.download === "1" || req.query.attachment === "1";
     const dispositionMode = isDownload ? "attachment" : "inline";
 
     res.setHeader("Content-Type", "audio/mpeg");
