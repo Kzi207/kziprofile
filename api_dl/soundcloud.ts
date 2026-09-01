@@ -232,8 +232,8 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
     const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
     const encodedTitle = encodeURIComponent(title);
 
-    const dlVal = String(req.query.dl || req.query.download || req.query.attachment || "");
-    const isDownload = ["1", "2", "true", "attachment"].includes(dlVal);
+    const dlVal = String(req.query.dl || req.query.download || req.query.attachment || "").trim();
+    const isDownload = Boolean(dlVal) && dlVal !== "0" && dlVal !== "false" && dlVal !== "inline";
     const dispositionMode = isDownload ? "attachment" : "inline";
 
     res.setHeader("Content-Type", "audio/mpeg");

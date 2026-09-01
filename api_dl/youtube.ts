@@ -244,8 +244,8 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
     const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
     const encodedTitle = encodeURIComponent(title);
 
-    const dlVal = String(req.query.dl || req.query.download || req.query.attachment || "");
-    const isDownload = ["1", "2", "true", "attachment"].includes(dlVal);
+    const dlVal = String(req.query.dl || req.query.download || req.query.attachment || "").trim();
+    const isDownload = Boolean(dlVal) && dlVal !== "0" && dlVal !== "false" && dlVal !== "inline";
     const dispositionMode = isDownload ? "attachment" : "inline";
 
     res.setHeader("Content-Type", isMp4 ? "video/mp4" : "audio/mpeg");
@@ -301,12 +301,13 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
       return;
     }
 
-    // Với MP3: Chuyển đổi qua FFmpeg
-    const ffmpegArgs = ["-i", "pipe:0"];
+    // Với MP3: Chuyển đổi qua FFmpeg với tối ưu tua nhanh (fast seeking)
+    const ffmpegArgs: string[] = ["-fflags", "+genpts+discardcorrupt"];
     if (seekSeconds > 0) {
       ffmpegArgs.push("-ss", seekSeconds.toString());
     }
     ffmpegArgs.push(
+      "-i", "pipe:0",
       "-vn",
       "-acodec", "libmp3lame",
       "-ab", "192k",
