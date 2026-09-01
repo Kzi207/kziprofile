@@ -163,7 +163,8 @@ export async function getSoundCloudDownloadInfo(req: Request, input: string, for
 
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(track.id, expires);
-    const download_url = `${baseUrl}/api/v1/soundcloud/stream/${track.id}.mp3?expires=${expires}&token=${token}`;
+    const stream_url = `${baseUrl}/api/v1/soundcloud/stream/${track.id}.mp3?expires=${expires}&token=${token}`;
+    const download_url = `${stream_url}&dl=1`;
 
     return {
       status: true,
@@ -176,6 +177,7 @@ export async function getSoundCloudDownloadInfo(req: Request, input: string, for
       type: type,
       expires_in: "15 phút",
       expires_at: new Date(expires).toISOString(),
+      stream_url: stream_url,
       download_url: download_url
     };
   } catch (error: any) {
@@ -230,11 +232,40 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
     const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
     const encodedTitle = encodeURIComponent(title);
 
+    const dlVal = String(req.query.dl || req.query.download || req.query.attachment || "");
+    const isDownload = ["1", "2", "true", "attachment"].includes(dlVal);
+    const dispositionMode = isDownload ? "attachment" : "inline";
+
     res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Content-Disposition", `inline; filename="${asciiTitle}.mp3"; filename*=UTF-8''${encodedTitle}.mp3`);
+    res.setHeader("Content-Disposition", `${dispositionMode}; filename="${asciiTitle}.mp3"; filename*=UTF-8''${encodedTitle}.mp3`);
     res.setHeader("Accept-Ranges", "bytes");
 
+    const range = req.headers.range;
+    const contentLength = mediaRes.headers.get("content-length");
+    const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
+
+    if (range && totalSize > 0) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10) || 0;
+      const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+      const chunksize = (end - start) + 1;
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${totalSize}`);
+      res.setHeader("Content-Length", chunksize.toString());
+    } else if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10) || 0;
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-*/*`);
+    } else if (totalSize > 0) {
+      res.setHeader("Content-Length", totalSize.toString());
+    }
+
     const nodeStream = Readable.fromWeb(mediaRes.body as any);
+    res.on("error", () => {
+      try { nodeStream.destroy(); } catch {}
+    });
+
     nodeStream.pipe(res);
 
     res.on("close", () => {

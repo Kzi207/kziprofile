@@ -170,6 +170,7 @@ export interface DownloadInfoResult {
   type?: string;
   expires_in?: string;
   expires_at?: string;
+  stream_url?: string;
   download_url?: string;
   message?: string;
 }
@@ -196,7 +197,8 @@ export async function getYouTubeDownloadInfo(req: Request, input: string, format
 
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(videoId, expires);
-    const download_url = `${baseUrl}/api/v1/youtube/stream/${videoId}.${type}?expires=${expires}&token=${token}`;
+    const stream_url = `${baseUrl}/api/v1/youtube/stream/${videoId}.${type}?expires=${expires}&token=${token}`;
+    const download_url = `${stream_url}&dl=1`;
 
     return {
       status: true,
@@ -208,6 +210,7 @@ export async function getYouTubeDownloadInfo(req: Request, input: string, format
       type: type,
       expires_in: "15 phút",
       expires_at: new Date(expires).toISOString(),
+      stream_url: stream_url,
       download_url: download_url
     };
   } catch (error: any) {
@@ -234,45 +237,54 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
     const yt = await getYT();
     const info = await yt.getBasicInfo(videoId);
     const title = cleanName(info.basic_info.title || "youtube_media");
+    const durationSec = info.basic_info.duration || 0;
     const isMp4 = (formatType && formatType.toLowerCase() === "mp4");
     const ext = isMp4 ? "mp4" : "mp3";
 
     const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
     const encodedTitle = encodeURIComponent(title);
 
+    const dlVal = String(req.query.dl || req.query.download || req.query.attachment || "");
+    const isDownload = ["1", "2", "true", "attachment"].includes(dlVal);
+    const dispositionMode = isDownload ? "attachment" : "inline";
+
     res.setHeader("Content-Type", isMp4 ? "video/mp4" : "audio/mpeg");
-    res.setHeader("Content-Disposition", `inline; filename="${asciiTitle}.${ext}"; filename*=UTF-8''${encodedTitle}.${ext}`);
+    res.setHeader("Content-Disposition", `${dispositionMode}; filename="${asciiTitle}.${ext}"; filename*=UTF-8''${encodedTitle}.${ext}`);
     res.setHeader("Accept-Ranges", "bytes");
 
-    if (isMp4) {
-      const downloadStream = await yt.download(videoId, {
-        type: "video+audio",
-        quality: "best",
-        client: "ANDROID"
-      });
-      const nodeStream = Readable.fromWeb(downloadStream as any);
-      nodeStream.pipe(res);
-      res.on("close", () => {
-        try { nodeStream.destroy(); } catch {}
-      });
-      return;
+    const range = req.headers.range;
+    let totalSize = 0;
+    let seekSeconds = 0;
+
+    if (!isMp4 && durationSec > 0) {
+      totalSize = Math.round(durationSec * 24000);
+    }
+
+    if (range && totalSize > 0) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10) || 0;
+      const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+      const chunksize = (end - start) + 1;
+      seekSeconds = Math.floor(start / 24000);
+
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${totalSize}`);
+      res.setHeader("Content-Length", chunksize.toString());
+    } else if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10) || 0;
+      seekSeconds = Math.floor(start / 24000);
+
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-*/*`);
+    } else if (totalSize > 0) {
+      res.setHeader("Content-Length", totalSize.toString());
     }
 
     const downloadStream = await yt.download(videoId, {
-      type: "audio",
-      quality: "best",
-      client: "ANDROID"
+      client: "ANDROID",
+      quality: "best"
     });
-
-    const ffmpegProc = spawn("ffmpeg", [
-      "-i", "pipe:0",
-      "-vn",
-      "-acodec", "libmp3lame",
-      "-ab", "192k",
-      "-ar", "44100",
-      "-f", "mp3",
-      "pipe:1"
-    ]);
 
     const nodeStream = Readable.fromWeb(downloadStream as any);
 
@@ -281,8 +293,39 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
       if (!res.headersSent) res.status(500).json({ status: false, message: "Lỗi luồng tải YouTube." });
     });
 
+    res.on("error", () => {
+      try { nodeStream.destroy(); } catch {}
+    });
+
+    if (isMp4) {
+      nodeStream.pipe(res);
+      res.on("close", () => {
+        try { nodeStream.destroy(); } catch {}
+      });
+      return;
+    }
+
+    // Với MP3: Chuyển đổi qua FFmpeg
+    const ffmpegArgs = ["-i", "pipe:0"];
+    if (seekSeconds > 0) {
+      ffmpegArgs.push("-ss", seekSeconds.toString());
+    }
+    ffmpegArgs.push(
+      "-vn",
+      "-acodec", "libmp3lame",
+      "-ab", "192k",
+      "-ar", "44100",
+      "-f", "mp3",
+      "pipe:1"
+    );
+
+    const ffmpegProc = spawn("ffmpeg", ffmpegArgs);
+
+    ffmpegProc.stdin.on("error", () => {});
+    ffmpegProc.stdout.on("error", () => {});
+
     ffmpegProc.on("error", (err) => {
-      console.warn("FFmpeg chưa được cài đặt hoặc không khả dụng. Đang stream audio trực tiếp...");
+      console.warn("FFmpeg không khả dụng, đang stream trực tiếp...");
       nodeStream.pipe(res);
     });
 
