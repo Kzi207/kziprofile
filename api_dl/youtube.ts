@@ -198,7 +198,7 @@ export async function getYouTubeDownloadInfo(req: Request, input: string, format
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(videoId, expires);
     const stream_url = `${baseUrl}/api/v1/youtube/stream/${videoId}.${type}?expires=${expires}&token=${token}`;
-    const download_url = `${stream_url}&dl=1`;
+    const download_url = `${stream_url}&dl=3`;
 
     return {
       status: true,

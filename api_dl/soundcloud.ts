@@ -164,7 +164,7 @@ export async function getSoundCloudDownloadInfo(req: Request, input: string, for
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(track.id, expires);
     const stream_url = `${baseUrl}/api/v1/soundcloud/stream/${track.id}.mp3?expires=${expires}&token=${token}`;
-    const download_url = `${stream_url}&dl=1`;
+    const download_url = `${stream_url}&dl=3`;
 
     return {
       status: true,
