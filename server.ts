@@ -50,6 +50,7 @@ const prisma = new Proxy({} as PrismaClient, {
   },
 });
 const app = express();
+app.set("trust proxy", true);
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "anime_cyberpunk_neon_secret_key_2026";
 
@@ -960,10 +961,9 @@ app.get("/api/dashboard", authenticateToken as any, async (req: Request, res: Re
 
 
 // --- YOUTUBE & SOUNDCLOUD MEDIA DOWNLOADER API V1 ---
-app.get("/api/v1", (req: Request, res: Response) => renderDocHTML(req, res));
-app.get("/api/v1/", (req: Request, res: Response) => renderDocHTML(req, res));
+app.get(["/api/v1", "/api/v1/", "/apiv1", "/apiv1/", "/v1", "/v1/"], (req: Request, res: Response) => renderDocHTML(req, res));
 
-app.get("/api/v1/youtube/stream/:filename", async (req: Request, res: Response, next: NextFunction) => {
+app.get(["/api/v1/youtube/stream/:filename", "/apiv1/youtube/stream/:filename", "/v1/youtube/stream/:filename"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const filename = req.params.filename;
     const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
@@ -974,7 +974,7 @@ app.get("/api/v1/youtube/stream/:filename", async (req: Request, res: Response, 
   }
 });
 
-app.get("/api/v1/youtube", async (req: Request, res: Response, next: NextFunction) => {
+app.get(["/api/v1/youtube", "/apiv1/youtube", "/v1/youtube"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { search, download, stream, type, format } = req.query as any;
 
@@ -996,7 +996,7 @@ app.get("/api/v1/youtube", async (req: Request, res: Response, next: NextFunctio
   }
 });
 
-app.get("/api/v1/soundcloud/stream/:filename", async (req: Request, res: Response, next: NextFunction) => {
+app.get(["/api/v1/soundcloud/stream/:filename", "/apiv1/soundcloud/stream/:filename", "/v1/soundcloud/stream/:filename"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const filename = req.params.filename;
     const input = filename.replace(/\.mp3$/i, "");
@@ -1006,7 +1006,7 @@ app.get("/api/v1/soundcloud/stream/:filename", async (req: Request, res: Respons
   }
 });
 
-app.get("/api/v1/soundcloud", async (req: Request, res: Response, next: NextFunction) => {
+app.get(["/api/v1/soundcloud", "/apiv1/soundcloud", "/v1/soundcloud"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { search, download, stream, type, format } = req.query as any;
 

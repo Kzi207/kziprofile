@@ -1,12 +1,13 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import "dotenv/config";
-import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia } from "./youtube.js";
+import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia, getBaseUrl } from "./youtube.js";
 import { searchSoundCloud, getSoundCloudDownloadInfo, streamSoundCloudMedia } from "./soundcloud.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set("trust proxy", true);
 app.use(cors());
 app.use(express.json());
 
@@ -40,9 +41,7 @@ export function parseDownloadInput(rawInput: any, queryType?: any, queryFormat?:
 
 // Hàm render giao diện tài liệu kết nối API
 export function renderDocHTML(req: Request, res: Response) {
-  const host = req.get("host") || "localhost:3000";
-  const protocol = req.protocol || "http";
-  const baseUrl = `${protocol}://${host}`;
+  const baseUrl = getBaseUrl(req);
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`
@@ -356,12 +355,11 @@ export function renderDocHTML(req: Request, res: Response) {
 }
 
 // Route trang tài liệu kết nối
-app.get("/api/v1", (req: Request, res: Response) => renderDocHTML(req, res));
-app.get("/api/v1/", (req: Request, res: Response) => renderDocHTML(req, res));
+app.get(["/api/v1", "/api/v1/", "/apiv1", "/apiv1/", "/v1", "/v1/"], (req: Request, res: Response) => renderDocHTML(req, res));
 app.get("/", (req: Request, res: Response) => renderDocHTML(req, res));
 
 // YouTube Stream Endpoint
-app.get("/api/v1/youtube/stream/:filename", async (req: Request, res: Response, next: NextFunction) => {
+app.get(["/api/v1/youtube/stream/:filename", "/apiv1/youtube/stream/:filename", "/v1/youtube/stream/:filename"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const filename = req.params.filename;
     const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
@@ -373,7 +371,7 @@ app.get("/api/v1/youtube/stream/:filename", async (req: Request, res: Response, 
 });
 
 // YouTube API Endpoint
-app.get("/api/v1/youtube", async (req: Request, res: Response, next: NextFunction) => {
+app.get(["/api/v1/youtube", "/apiv1/youtube", "/v1/youtube"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { search, download, stream, type, format } = req.query as any;
 
@@ -396,7 +394,7 @@ app.get("/api/v1/youtube", async (req: Request, res: Response, next: NextFunctio
 });
 
 // SoundCloud Stream Endpoint
-app.get("/api/v1/soundcloud/stream/:filename", async (req: Request, res: Response, next: NextFunction) => {
+app.get(["/api/v1/soundcloud/stream/:filename", "/apiv1/soundcloud/stream/:filename", "/v1/soundcloud/stream/:filename"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const filename = req.params.filename;
     const input = filename.replace(/\.mp3$/i, "");
@@ -407,7 +405,7 @@ app.get("/api/v1/soundcloud/stream/:filename", async (req: Request, res: Respons
 });
 
 // SoundCloud API Endpoint
-app.get("/api/v1/soundcloud", async (req: Request, res: Response, next: NextFunction) => {
+app.get(["/api/v1/soundcloud", "/apiv1/soundcloud", "/v1/soundcloud"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { search, download, stream, type, format } = req.query as any;
 

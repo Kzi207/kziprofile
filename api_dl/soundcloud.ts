@@ -1,7 +1,7 @@
 import { Readable } from "stream";
 import crypto from "crypto";
 import { Request, Response } from "express";
-import { DownloadInfoResult, MediaItem, SearchResult } from "./youtube.js";
+import { DownloadInfoResult, MediaItem, SearchResult, getBaseUrl } from "./youtube.js";
 
 const SECRET_KEY = process.env.DOWNLOAD_SECRET_KEY || "media_dl_secret_15m";
 
@@ -159,7 +159,7 @@ export async function getSoundCloudDownloadInfo(req: Request, input: string, for
     const artwork = track.artwork_url || track.user?.avatar_url || "";
 
     const type = "mp3";
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const baseUrl = getBaseUrl(req);
 
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(track.id, expires);

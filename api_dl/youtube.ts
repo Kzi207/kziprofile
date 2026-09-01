@@ -30,6 +30,59 @@ export async function getYT(): Promise<Innertube> {
   return ytInitPromise;
 }
 
+// Hàm tải stream với cơ chế fallback tự động chuyển đổi client YouTube (ưu tiên IOS -> ANDROID -> WEB ...)
+export async function downloadYouTubeStream(yt: Innertube, videoId: string, type: "audio" | "video" | "video+audio" = "audio") {
+  const clients = ["IOS", "ANDROID", "WEB", "TV_EMBEDDED", "YTMUSIC", "MWEB"] as const;
+  let lastError: any = null;
+
+  for (const client of clients) {
+    try {
+      const stream = await yt.download(videoId, {
+        client: client,
+        quality: "best",
+        type: type
+      });
+      return stream;
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[YouTube Stream] Client ${client} thất bại: ${err.message}, đang thử client tiếp theo...`);
+    }
+  }
+
+  throw lastError || new Error("Không thể khởi tạo luồng tải YouTube với các client.");
+}
+
+// Kiểm tra FFmpeg có sẵn trên hệ thống hay không (tránh crash trên Vercel Serverless)
+let ffmpegAvailable: boolean | null = null;
+async function isFFmpegAvailable(): Promise<boolean> {
+  if (ffmpegAvailable !== null) return ffmpegAvailable;
+  return new Promise((resolve) => {
+    try {
+      const proc = spawn("ffmpeg", ["-version"]);
+      proc.on("error", () => {
+        ffmpegAvailable = false;
+        resolve(false);
+      });
+      proc.on("close", (code) => {
+        ffmpegAvailable = code === 0;
+        resolve(ffmpegAvailable);
+      });
+    } catch {
+      ffmpegAvailable = false;
+      resolve(false);
+    }
+  });
+}
+
+// Helper lấy base URL tương thích môi trường Vercel (HTTPS Reverse Proxy)
+export function getBaseUrl(req: Request): string {
+  const host = req.get("host") || "localhost:3000";
+  const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+  const isVercel = host.includes("vercel.app") || Boolean(process.env.VERCEL);
+  const finalProto = isVercel ? "https" : proto;
+  return `${finalProto}://${host}`;
+}
+
 const SECRET_KEY = process.env.DOWNLOAD_SECRET_KEY || "media_dl_secret_15m";
 
 export function generateToken(id: string, expires: number): string {
@@ -193,7 +246,7 @@ export async function getYouTubeDownloadInfo(req: Request, input: string, format
     const thumbnail = thumbnails.length ? thumbnails[thumbnails.length - 1].url : "";
 
     const type = (formatType && formatType.toLowerCase() === "mp4") ? "mp4" : "mp3";
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const baseUrl = getBaseUrl(req);
 
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(videoId, expires);
@@ -248,6 +301,24 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
     const isDownload = ["2", "3", "true", "attachment"].includes(dlVal) || req.query.download === "1" || req.query.attachment === "1";
     const dispositionMode = isDownload ? "attachment" : "inline";
 
+    // Khởi tạo downloadStream trước khi đặt headers cho Response để kiểm tra tính hợp lệ của luồng dữ liệu
+    const downloadStream = await downloadYouTubeStream(yt, videoId, isMp4 ? "video+audio" : "audio");
+    const reader = (downloadStream as any).getReader();
+
+    // Đọc thử chunk đầu tiên để xác nhận YouTube không trả về 403 Forbidden hay 0-byte stream
+    const { done, value } = await reader.read();
+
+    if (done || !value || value.length === 0) {
+      if (!res.headersSent) {
+        res.status(502).json({
+          status: false,
+          message: "Luồng YouTube không khả dụng (0 bytes). YouTube đã chặn giải mã chữ ký trên môi trường Serverless."
+        });
+      }
+      return;
+    }
+
+    // Khi đã xác nhận có chunk dữ liệu hợp lệ (>0 bytes), tiến hành đặt Headers
     res.setHeader("Content-Type", isMp4 ? "video/mp4" : "audio/mpeg");
     res.setHeader("Content-Disposition", `${dispositionMode}; filename="${asciiTitle}.${ext}"; filename*=UTF-8''${encodedTitle}.${ext}`);
     res.setHeader("Accept-Ranges", "bytes");
@@ -275,33 +346,41 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
         res.status(206);
         res.setHeader("Content-Range", `bytes ${start}-/*`);
       }
+    } else {
+      res.status(200);
     }
 
-    const downloadStream = await yt.download(videoId, {
-      client: "ANDROID",
-      quality: "best"
+    // Ghi chunk đầu tiên đã nhận được
+    res.write(value);
+
+    // Đóng gói các chunk còn lại từ Web Reader sang Node Stream
+    const remainingStream = new Readable({
+      async read() {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            this.push(null);
+          } else {
+            this.push(value);
+          }
+        } catch (err) {
+          this.destroy(err as Error);
+        }
+      }
     });
 
-    const nodeStream = Readable.fromWeb(downloadStream as any);
+    const hasFFmpeg = await isFFmpegAvailable();
 
-    nodeStream.on("error", (err) => {
-      console.error("Lỗi YouTube Stream:", err);
-      if (!res.headersSent) res.status(500).json({ status: false, message: "Lỗi luồng tải YouTube." });
-    });
-
-    res.on("error", () => {
-      try { nodeStream.destroy(); } catch {}
-    });
-
-    if (isMp4) {
-      nodeStream.pipe(res);
+    if (isMp4 || !hasFFmpeg) {
+      // Stream các chunk còn lại trực tiếp tới client
+      remainingStream.pipe(res);
       res.on("close", () => {
-        try { nodeStream.destroy(); } catch {}
+        try { remainingStream.destroy(); } catch {}
       });
       return;
     }
 
-    // Với MP3: Chuyển đổi qua FFmpeg với tối ưu tua nhanh (fast seeking)
+    // Với MP3 trên môi trường có FFmpeg (Local Server): Chuyển đổi qua FFmpeg với fast seeking
     const ffmpegArgs: string[] = ["-fflags", "+genpts+discardcorrupt"];
     if (seekSeconds > 0) {
       ffmpegArgs.push("-ss", seekSeconds.toString());
@@ -321,16 +400,15 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
     ffmpegProc.stdin.on("error", () => {});
     ffmpegProc.stdout.on("error", () => {});
 
-    ffmpegProc.on("error", (err) => {
-      console.warn("FFmpeg không khả dụng, đang stream trực tiếp...");
-      nodeStream.pipe(res);
+    ffmpegProc.on("error", () => {
+      try { remainingStream.pipe(res); } catch {}
     });
 
-    nodeStream.pipe(ffmpegProc.stdin);
+    remainingStream.pipe(ffmpegProc.stdin);
     ffmpegProc.stdout.pipe(res);
 
     res.on("close", () => {
-      try { nodeStream.destroy(); } catch {}
+      try { remainingStream.destroy(); } catch {}
       try { ffmpegProc.kill(); } catch {}
     });
 
@@ -341,3 +419,4 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
     }
   }
 }
+
