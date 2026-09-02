@@ -53,6 +53,62 @@ export async function downloadYouTubeStream(yt: Innertube, videoId: string, type
   throw lastError || new Error("Không thể khởi tạo luồng tải YouTube với các client.");
 }
 
+// Danh sách Piped public instances dự phòng
+const PIPED_INSTANCES = [
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.adminforge.de",
+  "https://piped-api.garudalinux.org",
+  "https://api.piped.projectsegfau.lt"
+];
+
+export interface PipedStreamResult {
+  streamUrl: string;
+  mimeType: string;
+}
+
+/**
+ * Lấy direct stream URL từ Piped API (fallback khi youtubei.js bị chặn trên Serverless).
+ * Trả về URL stream tốt nhất phù hợp với loại yêu cầu (mp4 video+audio hoặc audio only).
+ */
+export async function getPipedStreamUrl(videoId: string, wantVideo: boolean): Promise<PipedStreamResult | null> {
+  for (const instance of PIPED_INSTANCES) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(`${instance}/streams/${videoId}`, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!res.ok) continue;
+      const data = await res.json() as any;
+
+      if (wantVideo) {
+        // Ưu tiên videoStreams có cả video+audio (muxed), fallback sang stream riêng
+        const muxed = (data.videoStreams || []).find((s: any) => s.videoOnly === false && s.mimeType?.startsWith("video/mp4"));
+        if (muxed?.url) {
+          console.log(`[Piped Fallback] ✅ Lấy được stream MP4 từ ${instance}`);
+          return { streamUrl: muxed.url, mimeType: muxed.mimeType || "video/mp4" };
+        }
+        // Fallback: lấy stream video chất lượng cao nhất
+        const best = (data.videoStreams || []).filter((s: any) => s.mimeType?.startsWith("video/mp4")).sort((a: any, b: any) => (b.quality || 0) - (a.quality || 0))[0];
+        if (best?.url) {
+          console.log(`[Piped Fallback] ✅ Lấy được stream MP4 (video-only) từ ${instance}`);
+          return { streamUrl: best.url, mimeType: best.mimeType || "video/mp4" };
+        }
+      } else {
+        // Ưu tiên audioStreams opus > m4a > bất kỳ
+        const audio = (data.audioStreams || []).sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+        if (audio?.url) {
+          console.log(`[Piped Fallback] ✅ Lấy được stream Audio từ ${instance}`);
+          return { streamUrl: audio.url, mimeType: audio.mimeType || "audio/webm" };
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Piped Fallback] Instance ${instance} thất bại: ${err.message}`);
+    }
+  }
+  return null;
+}
+
 // Kiểm tra FFmpeg có sẵn trên hệ thống hay không (tránh crash trên Vercel Serverless)
 let ffmpegAvailable: boolean | null = null;
 async function isFFmpegAvailable(): Promise<boolean> {
@@ -358,8 +414,25 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
       console.warn(`[YouTube Stream] Thất bại khi giải mã luồng YouTube (${err.message}). Đang thử chuyển sang SoundCloud Fallback...`);
     }
 
-    // Nếu YouTube bị chặn giải mã trên Vercel và đây là yêu cầu âm thanh (mp3)
+    // Nếu YouTube bị chặn giải mã trên Vercel → thử Piped API fallback
     if (!firstChunk) {
+      // --- Fallback 1: Piped API (hoạt động cho cả MP3 lẫn MP4) ---
+      try {
+        console.log(`[Piped Fallback] Đang thử lấy stream từ Piped API cho videoId: ${videoId}...`);
+        const pipedResult = await getPipedStreamUrl(videoId, isMp4);
+        if (pipedResult?.streamUrl) {
+          console.log(`[Piped Fallback] ✅ Redirect 302 → ${pipedResult.streamUrl.slice(0, 80)}...`);
+          if (!res.headersSent) {
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.redirect(302, pipedResult.streamUrl);
+          }
+          return;
+        }
+      } catch (pipedErr: any) {
+        console.error("[Piped Fallback] Toàn bộ instances thất bại:", pipedErr.message);
+      }
+
+      // --- Fallback 2 (chỉ MP3): SoundCloud ---
       if (!isMp4) {
         try {
           const searchQuery = `${meta.title} ${meta.author}`.trim();
@@ -378,7 +451,7 @@ export async function streamYouTubeMedia(req: Request, res: Response, input: str
       if (!res.headersSent) {
         res.status(502).json({
           status: false,
-          message: "Luồng YouTube không khả dụng. YouTube đã chặn giải mã chữ ký trên môi trường Serverless."
+          message: `Luồng YouTube (${isMp4 ? "MP4" : "MP3"}) không khả dụng. Tất cả phương thức giải mã (youtubei.js, Piped API${!isMp4 ? ", SoundCloud" : ""}) đều thất bại.`
         });
       }
       return;
