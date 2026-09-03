@@ -14,6 +14,15 @@ import { v2 as cloudinary } from "cloudinary";
 import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia } from "./api_dl/youtube.js";
 import { searchSoundCloud, getSoundCloudDownloadInfo, streamSoundCloudMedia } from "./api_dl/soundcloud.js";
 import { parseDownloadInput, renderDocHTML } from "./api_dl/index.js";
+import {
+  listPlatforms,
+  downloadPlatformMedia,
+  fetchMedia,
+  downloaderHealth,
+  ApiError,
+} from "./api_dl/btch.js";
+import rateLimit from "express-rate-limit";
+
 
 
 // Load environment variables
@@ -960,37 +969,48 @@ app.get("/api/dashboard", authenticateToken as any, async (req: Request, res: Re
 
 
 
-// --- YOUTUBE & SOUNDCLOUD MEDIA DOWNLOADER API V1 ---
+// --- MULTI-PLATFORM BTCH DOWNLOADER ENDPOINTS ---
+const downloaderRateLimiter = rateLimit({
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000,
+  max: Number(process.env.RATE_LIMIT_MAX) || 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: { message: "Quá nhiều yêu cầu, vui lòng thử lại sau.", statusCode: 429 } },
+});
+
+// ==========================================
+// MEDIA DOWNLOADER & STREAMING API V1 ROUTES
+// ==========================================
+
+// Trang tài liệu API v1
 app.get(["/api/v1", "/api/v1/", "/apiv1", "/apiv1/", "/v1", "/v1/"], (req: Request, res: Response) => renderDocHTML(req, res));
 
+// Endpoint phụ trợ
+app.get(["/api/platforms", "/api/v1/platforms", "/apiv1/platforms", "/v1/platforms"], listPlatforms);
+app.get(["/api/health", "/api/v1/health", "/apiv1/health", "/v1/health"], downloaderHealth);
+
+// Proxy stream & fetch media
+app.get(["/api/fetch-media", "/api/v1/fetch-media", "/apiv1/fetch-media", "/v1/fetch-media"], downloaderRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    return await fetchMedia(req, res);
+  } catch (error: any) {
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: { message: error.message, statusCode: error.statusCode }
+      });
+    }
+    next(error);
+  }
+});
+
+// Direct Stream endpoints
 app.get(["/api/v1/youtube/stream/:filename", "/apiv1/youtube/stream/:filename", "/v1/youtube/stream/:filename"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const filename = req.params.filename;
     const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
     const input = filename.replace(/\.(mp3|mp4)$/i, "");
     return await streamYouTubeMedia(req, res, input, type);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get(["/api/v1/youtube", "/apiv1/youtube", "/v1/youtube"], async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { search, download, stream, type, format } = req.query as any;
-
-    if (stream) {
-      const parsed = parseDownloadInput(stream, type, format);
-      return await streamYouTubeMedia(req, res, parsed.url, parsed.type);
-    }
-
-    if (download) {
-      const parsed = parseDownloadInput(download, type, format);
-      const info = await getYouTubeDownloadInfo(req, parsed.url, parsed.type);
-      return res.status(info.status ? 200 : 400).json(info);
-    }
-
-    const data = await searchYouTube(search as string);
-    return res.status(data.status ? 200 : 400).json(data);
   } catch (error) {
     next(error);
   }
@@ -1006,27 +1026,60 @@ app.get(["/api/v1/soundcloud/stream/:filename", "/apiv1/soundcloud/stream/:filen
   }
 });
 
-app.get(["/api/v1/soundcloud", "/apiv1/soundcloud", "/v1/soundcloud"], async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { search, download, stream, type, format } = req.query as any;
+// Endpoint Tải Media Đa Nền Tảng: /api/v1/:platform?url=... (hoặc ?search=...)
+app.get(["/api/v1/:platform", "/apiv1/:platform", "/v1/:platform", "/api/download/:platform"], downloaderRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  const { platform } = req.params;
 
+  // Xử lý các legacy params cho YouTube nếu có stream/download đặc thù
+  if (platform === "youtube") {
+    const { stream, download, search, type, format, url } = req.query as any;
+    if (stream) {
+      const parsed = parseDownloadInput(stream, type, format);
+      return await streamYouTubeMedia(req, res, parsed.url, parsed.type);
+    }
+    if (download) {
+      const parsed = parseDownloadInput(download, type, format);
+      const info = await getYouTubeDownloadInfo(req, parsed.url, parsed.type);
+      return res.status(info.status ? 200 : 400).json(info);
+    }
+    if (search && !url) {
+      const data = await searchYouTube(search as string);
+      return res.status(data.status ? 200 : 400).json(data);
+    }
+  }
+
+  // Xử lý các legacy params cho SoundCloud nếu có stream/download đặc thù
+  if (platform === "soundcloud") {
+    const { stream, download, search, type, format, url } = req.query as any;
     if (stream) {
       const parsed = parseDownloadInput(stream, type, format);
       return await streamSoundCloudMedia(req, res, parsed.url);
     }
-
     if (download) {
       const parsed = parseDownloadInput(download, type, format);
       const info = await getSoundCloudDownloadInfo(req, parsed.url, parsed.type);
       return res.status(info.status ? 200 : 400).json(info);
     }
+    if (search && !url) {
+      const data = await searchSoundCloud(search as string);
+      return res.status(data.status ? 200 : 400).json(data);
+    }
+  }
 
-    const data = await searchSoundCloud(search as string);
-    return res.status(data.status ? 200 : 400).json(data);
-  } catch (error) {
+  // Gọi Trực Tiếp Multi-Platform Downloader
+  try {
+    return await downloadPlatformMedia(req, res);
+  } catch (error: any) {
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: { message: error.message, statusCode: error.statusCode }
+      });
+    }
     next(error);
   }
 });
+
 
 // ==========================================
 // VITE OR STATIC FILE SERVING

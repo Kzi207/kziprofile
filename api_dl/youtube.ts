@@ -3,140 +3,17 @@ import { Readable } from "stream";
 import { spawn } from "child_process";
 import crypto from "crypto";
 import { Request, Response } from "express";
-import { searchSoundCloud, streamSoundCloudMedia } from "./soundcloud.js";
+import ytdl from "@distube/ytdl-core";
+import { withTimeout } from "./utils/withTimeout.js";
 
-// Tắt các log cảnh báo Parser của Youtubei.js
 Log.setLevel(Log.Level.NONE);
 
-let ytInstance: Innertube | null = null;
-let ytInitPromise: Promise<Innertube> | null = null;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export async function getYT(): Promise<Innertube> {
-  if (ytInstance) return ytInstance;
-  if (ytInitPromise) return ytInitPromise;
-
-  ytInitPromise = (async () => {
-    try {
-      ytInstance = await Innertube.create({
-        location: "VN",
-        retrieve_player: true
-      });
-      return ytInstance;
-    } catch (err) {
-      ytInitPromise = null;
-      throw err;
-    }
-  })();
-
-  return ytInitPromise;
-}
-
-// Hàm tải stream với cơ chế fallback tự động chuyển đổi client YouTube (ưu tiên IOS -> ANDROID -> WEB ...)
-export async function downloadYouTubeStream(yt: Innertube, videoId: string, type: "audio" | "video" | "video+audio" = "audio") {
-  const clients = ["IOS", "ANDROID", "WEB", "TV_EMBEDDED", "YTMUSIC", "MWEB"] as const;
-  let lastError: any = null;
-
-  for (const client of clients) {
-    try {
-      const stream = await yt.download(videoId, {
-        client: client,
-        quality: "best",
-        type: type
-      });
-      return stream;
-    } catch (err: any) {
-      lastError = err;
-      console.warn(`[YouTube Stream] Client ${client} thất bại: ${err.message}, đang thử client tiếp theo...`);
-    }
-  }
-
-  throw lastError || new Error("Không thể khởi tạo luồng tải YouTube với các client.");
-}
-
-// Danh sách Piped public instances dự phòng
-const PIPED_INSTANCES = [
-  "https://pipedapi.kavin.rocks",
-  "https://pipedapi.adminforge.de",
-  "https://piped-api.garudalinux.org",
-  "https://api.piped.projectsegfau.lt"
-];
-
-export interface PipedStreamResult {
-  streamUrl: string;
-  mimeType: string;
-}
-
-/**
- * Lấy direct stream URL từ Piped API (fallback khi youtubei.js bị chặn trên Serverless).
- * Trả về URL stream tốt nhất phù hợp với loại yêu cầu (mp4 video+audio hoặc audio only).
- */
-export async function getPipedStreamUrl(videoId: string, wantVideo: boolean): Promise<PipedStreamResult | null> {
-  for (const instance of PIPED_INSTANCES) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(`${instance}/streams/${videoId}`, { signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!res.ok) continue;
-      const data = await res.json() as any;
-
-      if (wantVideo) {
-        // Ưu tiên videoStreams có cả video+audio (muxed), fallback sang stream riêng
-        const muxed = (data.videoStreams || []).find((s: any) => s.videoOnly === false && s.mimeType?.startsWith("video/mp4"));
-        if (muxed?.url) {
-          console.log(`[Piped Fallback] ✅ Lấy được stream MP4 từ ${instance}`);
-          return { streamUrl: muxed.url, mimeType: muxed.mimeType || "video/mp4" };
-        }
-        // Fallback: lấy stream video chất lượng cao nhất
-        const best = (data.videoStreams || []).filter((s: any) => s.mimeType?.startsWith("video/mp4")).sort((a: any, b: any) => (b.quality || 0) - (a.quality || 0))[0];
-        if (best?.url) {
-          console.log(`[Piped Fallback] ✅ Lấy được stream MP4 (video-only) từ ${instance}`);
-          return { streamUrl: best.url, mimeType: best.mimeType || "video/mp4" };
-        }
-      } else {
-        // Ưu tiên audioStreams opus > m4a > bất kỳ
-        const audio = (data.audioStreams || []).sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))[0];
-        if (audio?.url) {
-          console.log(`[Piped Fallback] ✅ Lấy được stream Audio từ ${instance}`);
-          return { streamUrl: audio.url, mimeType: audio.mimeType || "audio/webm" };
-        }
-      }
-    } catch (err: any) {
-      console.warn(`[Piped Fallback] Instance ${instance} thất bại: ${err.message}`);
-    }
-  }
-  return null;
-}
-
-// Kiểm tra FFmpeg có sẵn trên hệ thống hay không (tránh crash trên Vercel Serverless)
-let ffmpegAvailable: boolean | null = null;
-async function isFFmpegAvailable(): Promise<boolean> {
-  if (ffmpegAvailable !== null) return ffmpegAvailable;
-  return new Promise((resolve) => {
-    try {
-      const proc = spawn("ffmpeg", ["-version"]);
-      proc.on("error", () => {
-        ffmpegAvailable = false;
-        resolve(false);
-      });
-      proc.on("close", (code) => {
-        ffmpegAvailable = code === 0;
-        resolve(ffmpegAvailable);
-      });
-    } catch {
-      ffmpegAvailable = false;
-      resolve(false);
-    }
-  });
-}
-
-// Helper lấy base URL tương thích môi trường Vercel (HTTPS Reverse Proxy)
 export function getBaseUrl(req: Request): string {
   const host = req.get("host") || "localhost:3000";
   const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
-  const isVercel = host.includes("vercel.app") || Boolean(process.env.VERCEL);
-  const finalProto = isVercel ? "https" : proto;
+  const finalProto = (host.includes("vercel.app") || Boolean(process.env.VERCEL)) ? "https" : proto;
   return `${finalProto}://${host}`;
 }
 
@@ -151,18 +28,11 @@ export function validateToken(id: string, req: Request, res: Response): boolean 
   if (expires || token) {
     const expNum = Number(expires);
     if (!expNum || isNaN(expNum) || Date.now() > expNum) {
-      res.status(410).json({
-        status: false,
-        message: "Link download đã hết hạn (chỉ có hiệu lực trong 15 phút). Vui lòng gọi API lấy link mới."
-      });
+      res.status(410).json({ status: false, message: "Link đã hết hạn. Vui lòng gọi API để lấy link mới." });
       return false;
     }
-    const expectedToken = generateToken(id, expNum);
-    if (token !== expectedToken) {
-      res.status(403).json({
-        status: false,
-        message: "Token xác thực link download không hợp lệ."
-      });
+    if (token !== generateToken(id, expNum)) {
+      res.status(403).json({ status: false, message: "Token không hợp lệ." });
       return false;
     }
   }
@@ -172,19 +42,20 @@ export function validateToken(id: string, req: Request, res: Response): boolean 
 export function extractVideoId(input: string): string | null {
   if (!input) return null;
   const str = String(input).trim();
-  if (/^[a-zA-Z0-9_-]{11}$/.test(str)) {
-    return str;
-  }
+  if (/^[a-zA-Z0-9_-]{11}$/.test(str)) return str;
   const match = str.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/);
   return match ? match[1] : null;
 }
 
+export function normalizeYouTubeUrl(input: string): string {
+  let v = String(input || "").trim();
+  v = v.replace(/^(?:https?:\/\/)?(?:www\.)?youtu\.be\/([^?&/]+).*$/i, "https://www.youtube.com/watch?v=$1");
+  v = v.replace(/^(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([^?&/]+).*$/i, "https://www.youtube.com/watch?v=$1");
+  return v;
+}
+
 export function cleanName(name: string): string {
-  return (name || "")
-    .replace(/[<>:"/\\|?*]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 180);
+  return (name || "").replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
 export function formatDuration(seconds: number): string {
@@ -192,370 +63,483 @@ export function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  }
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
+// ─── Interfaces ───────────────────────────────────────────────────────────────
+
 export interface MediaItem {
-  id: string;
-  title: string;
-  artist: string;
-  duration: string;
-  duration_seconds?: number;
-  thumbnail: string;
-  url: string;
+  id: string; title: string; artist: string;
+  duration: string; duration_seconds?: number;
+  thumbnail: string; url: string;
 }
 
 export interface SearchResult {
-  status: boolean;
-  type: string;
-  query: string;
-  total: number;
-  data: MediaItem[];
-  message?: string;
-}
-
-export async function searchYouTube(query?: string): Promise<SearchResult> {
-  try {
-    const yt = await getYT();
-    const isHome = (!query || typeof query !== "string" || query.trim() === "" || query.trim().toLowerCase() === "home");
-    const searchTerm = isHome ? "Vpop Music Video Official 2026 bài hát thịnh hành" : query.trim();
-
-    const searchRes = await yt.search(searchTerm, { type: "video" });
-    const rawVideos = (searchRes.videos || []) as any[];
-
-    let videos: MediaItem[] = rawVideos.map((item: any) => {
-      const sec = item.duration?.seconds || 0;
-      const thumbnails = item.thumbnails || item.snippet?.thumbnails || [];
-      const thumb = thumbnails.length ? thumbnails[thumbnails.length - 1].url : "";
-      return {
-        id: item.id || "",
-        title: item.title?.text || item.title || "",
-        artist: item.author?.name || item.author || "",
-        duration: item.duration?.text || formatDuration(sec),
-        duration_seconds: sec,
-        thumbnail: thumb,
-        url: `https://youtu.be/${item.id}`
-      };
-    });
-
-    if (isHome) {
-      const validDuration = videos.filter(v => (v.duration_seconds || 0) >= 120 && (v.duration_seconds || 0) <= 600);
-      const otherDuration = videos.filter(v => (v.duration_seconds || 0) < 120 || (v.duration_seconds || 0) > 600);
-      videos = [...validDuration, ...otherDuration];
-    }
-
-    const cleanData = videos.map(({ duration_seconds, ...rest }) => rest);
-
-    return {
-      status: true,
-      type: isHome ? "home" : "search",
-      query: isHome ? "Bài hát đang thịnh hành (Home)" : searchTerm,
-      total: cleanData.length,
-      data: cleanData
-    };
-  } catch (error: any) {
-    console.error("Lỗi searchYouTube:", error);
-    return {
-      status: false,
-      type: "error",
-      query: query || "",
-      total: 0,
-      message: "Lỗi khi tìm kiếm YouTube: " + (error.message || "Unknown error"),
-      data: []
-    };
-  }
+  status: boolean; type: string; query: string;
+  total: number; data: MediaItem[]; message?: string;
 }
 
 export interface DownloadInfoResult {
-  status: boolean;
-  id?: string;
-  title?: string;
-  author?: string;
-  duration?: string;
-  thumbnail?: string;
-  artwork?: string;
-  type?: string;
-  expires_in?: string;
-  expires_at?: string;
-  stream_url?: string;
-  download_url?: string;
-  message?: string;
+  status: boolean; id?: string; title?: string; author?: string;
+  duration?: string; thumbnail?: string; type?: string;
+  expires_in?: string; expires_at?: string;
+  stream_url?: string; download_url?: string; message?: string;
 }
 
 export interface YouTubeMetadata {
-  title: string;
-  author: string;
-  duration: number;
-  thumbnail: string;
+  title: string; author: string; duration: number; thumbnail: string;
 }
 
+// ─── Youtubei.js singleton ────────────────────────────────────────────────────
+
+let ytInstance: Innertube | null = null;
+let ytInitPromise: Promise<Innertube> | null = null;
+
+export async function getYT(): Promise<Innertube> {
+  if (ytInstance) return ytInstance;
+  if (ytInitPromise) return ytInitPromise;
+  ytInitPromise = (async () => {
+    try {
+      ytInstance = await Innertube.create({ location: "VN", retrieve_player: true });
+      return ytInstance;
+    } catch (err) { ytInitPromise = null; throw err; }
+  })();
+  return ytInitPromise;
+}
+
+// ─── Piped API fallback ───────────────────────────────────────────────────────
+
+const PIPED_INSTANCES = [
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.adminforge.de",
+  "https://piped-api.garudalinux.org",
+  "https://api.piped.projectsegfau.lt",
+];
+
+export async function getPipedStreamUrl(videoId: string, wantVideo: boolean): Promise<{ streamUrl: string; mimeType: string } | null> {
+  for (const instance of PIPED_INSTANCES) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(`${instance}/streams/${videoId}`, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) continue;
+      const data = await res.json() as any;
+      if (wantVideo) {
+        const muxed = (data.videoStreams || []).find((s: any) => !s.videoOnly && s.mimeType?.startsWith("video/mp4"));
+        if (muxed?.url) return { streamUrl: muxed.url, mimeType: muxed.mimeType };
+        const best = (data.videoStreams || []).filter((s: any) => s.mimeType?.startsWith("video/mp4")).sort((a: any, b: any) => (b.quality || 0) - (a.quality || 0))[0];
+        if (best?.url) return { streamUrl: best.url, mimeType: best.mimeType };
+      } else {
+        const audio = (data.audioStreams || []).sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+        if (audio?.url) return { streamUrl: audio.url, mimeType: audio.mimeType || "audio/webm" };
+      }
+    } catch (err: any) {
+      console.warn(`[Piped] ${instance} failed: ${err.message}`);
+    }
+  }
+  return null;
+}
+
+// ─── FFmpeg check ─────────────────────────────────────────────────────────────
+
+let ffmpegAvailable: boolean | null = null;
+async function isFFmpegAvailable(): Promise<boolean> {
+  if (ffmpegAvailable !== null) return ffmpegAvailable;
+  return new Promise((resolve) => {
+    try {
+      const proc = spawn("ffmpeg", ["-version"]);
+      proc.on("error", () => { ffmpegAvailable = false; resolve(false); });
+      proc.on("close", (code) => { ffmpegAvailable = code === 0; resolve(ffmpegAvailable!); });
+    } catch { ffmpegAvailable = false; resolve(false); }
+  });
+}
+
+// ─── YouTube Metadata ─────────────────────────────────────────────────────────
+
 export async function getYouTubeMetadata(videoId: string): Promise<YouTubeMetadata> {
+  // Try yt-dlp first (most reliable)
+  try {
+    const meta = await withTimeout<YouTubeMetadata>(
+      new Promise((resolve, reject) => {
+        const proc = spawn("yt-dlp", [
+          "--no-playlist", "--print", "%(title)s\n%(uploader)s\n%(duration)s\n%(thumbnail)s",
+          "--no-warnings", "--quiet",
+          `https://www.youtube.com/watch?v=${videoId}`
+        ]);
+        let out = "";
+        proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+        proc.on("close", (code) => {
+          if (code !== 0 || !out.trim()) return reject(new Error("yt-dlp metadata failed"));
+          const lines = out.trim().split("\n");
+          resolve({
+            title: lines[0] || "YouTube Media",
+            author: lines[1] || "YouTube Artist",
+            duration: parseInt(lines[2] || "0") || 0,
+            thumbnail: lines[3] || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          });
+        });
+        proc.on("error", reject);
+      }),
+      8000, "yt-dlp metadata timeout"
+    );
+    return meta;
+  } catch (err: any) {
+    console.warn(`[Metadata] yt-dlp failed: ${err.message}`);
+  }
+
+  // Try youtubei.js
   try {
     const yt = await getYT();
     const info = await yt.getBasicInfo(videoId);
     if (info?.basic_info?.title) {
       const thumbnails = info.basic_info.thumbnail || [];
-      const thumb = thumbnails.length ? thumbnails[thumbnails.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
       return {
         title: info.basic_info.title,
         author: info.basic_info.author || "YouTube Artist",
         duration: info.basic_info.duration || 0,
-        thumbnail: thumb
+        thumbnail: thumbnails.length ? thumbnails[thumbnails.length - 1].url : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
       };
     }
   } catch (err: any) {
-    console.warn(`[YouTube Metadata Warning] getBasicInfo failed (${err.message}). Using Google oEmbed Fallback...`);
+    console.warn(`[Metadata] youtubei.js failed: ${err.message}`);
   }
 
+  // oEmbed fallback
   try {
     const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
     if (res.ok) {
-      const data = await res.json();
+      const data = await res.json() as any;
       return {
         title: data.title || "YouTube Media",
         author: data.author_name || "YouTube Artist",
         duration: 0,
-        thumbnail: data.thumbnail_url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+        thumbnail: data.thumbnail_url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
       };
     }
-  } catch (e: any) {
-    console.error("oEmbed fallback error:", e.message);
-  }
+  } catch {}
 
-  return {
-    title: "YouTube Media",
-    author: "YouTube Artist",
-    duration: 0,
-    thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
-  };
+  return { title: "YouTube Media", author: "YouTube Artist", duration: 0, thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` };
 }
 
-export async function getYouTubeDownloadInfo(req: Request, input: string, formatType: string = "mp3"): Promise<DownloadInfoResult> {
+// ─── YouTube Search ───────────────────────────────────────────────────────────
+
+export async function searchYouTube(query?: string): Promise<SearchResult> {
+  const isHome = !query || typeof query !== "string" || query.trim() === "" || query.trim().toLowerCase() === "home";
+  const searchTerm = isHome ? "Vpop Music Video Official 2026 bài hát thịnh hành" : query.trim();
+
+  // Try yt-dlp ytsearch
+  try {
+    const results = await withTimeout<MediaItem[]>(
+      new Promise((resolve, reject) => {
+        const proc = spawn("yt-dlp", [
+          `ytsearch15:${searchTerm}`,
+          "--no-playlist", "--print",
+          "%(id)s\t%(title)s\t%(uploader)s\t%(duration)s\t%(thumbnail)s",
+          "--no-warnings", "--quiet", "--flat-playlist"
+        ]);
+        let out = "";
+        proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+        proc.on("close", (code) => {
+          if (code !== 0 || !out.trim()) return reject(new Error("yt-dlp search failed"));
+          const items: MediaItem[] = out.trim().split("\n").filter(Boolean).map((line) => {
+            const [id, title, artist, dur, thumbnail] = line.split("\t");
+            return { id, title, artist, duration: formatDuration(parseInt(dur) || 0), duration_seconds: parseInt(dur) || 0, thumbnail: thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, url: `https://youtu.be/${id}` };
+          });
+          resolve(items);
+        });
+        proc.on("error", reject);
+      }),
+      12000, "yt-dlp search timeout"
+    );
+    let videos = results;
+    if (isHome) {
+      const valid = videos.filter(v => (v.duration_seconds || 0) >= 120 && (v.duration_seconds || 0) <= 600);
+      const other = videos.filter(v => (v.duration_seconds || 0) < 120 || (v.duration_seconds || 0) > 600);
+      videos = [...valid, ...other];
+    }
+    return { status: true, type: isHome ? "home" : "search", query: searchTerm, total: videos.length, data: videos.map(({ duration_seconds, ...rest }) => rest) };
+  } catch (err: any) {
+    console.warn(`[Search] yt-dlp failed: ${err.message}`);
+  }
+
+  // Fallback: youtubei.js
+  try {
+    const yt = await getYT();
+    const searchRes = await yt.search(searchTerm, { type: "video" });
+    let videos: MediaItem[] = (searchRes.videos as any[] || []).map((item: any) => {
+      const sec = item.duration?.seconds || 0;
+      const thumbs = item.thumbnails || [];
+      return { id: item.id || "", title: item.title?.text || item.title || "", artist: item.author?.name || "", duration: item.duration?.text || formatDuration(sec), duration_seconds: sec, thumbnail: thumbs.length ? thumbs[thumbs.length - 1].url : "", url: `https://youtu.be/${item.id}` };
+    });
+    if (isHome) {
+      const valid = videos.filter(v => (v.duration_seconds || 0) >= 120 && (v.duration_seconds || 0) <= 600);
+      videos = [...valid, ...videos.filter(v => !valid.includes(v))];
+    }
+    return { status: true, type: isHome ? "home" : "search", query: searchTerm, total: videos.length, data: videos.map(({ duration_seconds, ...rest }) => rest) };
+  } catch (err: any) {
+    return { status: false, type: "error", query: query || "", total: 0, message: "Lỗi tìm kiếm: " + err.message, data: [] };
+  }
+}
+
+// ─── YouTube Download Info ────────────────────────────────────────────────────
+
+export async function getYouTubeDownloadInfo(req: Request, input: string, formatType = "mp3"): Promise<DownloadInfoResult> {
   try {
     const videoId = extractVideoId(input);
-    if (!videoId) {
-      return { status: false, message: "Không tìm thấy Video ID từ link cung cấp." };
-    }
-
+    if (!videoId) return { status: false, message: "Không tìm thấy Video ID hợp lệ." };
     const meta = await getYouTubeMetadata(videoId);
-    const duration = formatDuration(meta.duration);
-
-    const type = (formatType && formatType.toLowerCase() === "mp4") ? "mp4" : "mp3";
+    const type = formatType.toLowerCase() === "mp4" ? "mp4" : "mp3";
     const baseUrl = getBaseUrl(req);
-
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(videoId, expires);
-    const stream_url = `${baseUrl}/api/v1/youtube/stream/${videoId}.${type}?expires=${expires}&token=${token}&dl=1`;
-    const download_url = `${baseUrl}/api/v1/youtube/stream/${videoId}.${type}?expires=${expires}&token=${token}&dl=2`;
-
     return {
-      status: true,
-      id: videoId,
-      title: meta.title,
-      author: meta.author,
-      duration: duration,
-      thumbnail: meta.thumbnail,
-      type: type,
-      expires_in: "15 phút",
-      expires_at: new Date(expires).toISOString(),
-      stream_url: stream_url,
-      download_url: download_url
+      status: true, id: videoId, title: meta.title, author: meta.author,
+      duration: formatDuration(meta.duration), thumbnail: meta.thumbnail, type,
+      expires_in: "15 phút", expires_at: new Date(expires).toISOString(),
+      stream_url: `${baseUrl}/api/v1/youtube/stream/${videoId}.${type}?expires=${expires}&token=${token}&dl=1`,
+      download_url: `${baseUrl}/api/v1/youtube/stream/${videoId}.${type}?expires=${expires}&token=${token}&dl=2`,
     };
-  } catch (error: any) {
-    console.error("Lỗi getYouTubeDownloadInfo:", error);
-    return {
-      status: false,
-      message: "Không thể lấy thông tin video YouTube: " + (error.message || "Unknown error")
-    };
+  } catch (err: any) {
+    return { status: false, message: "Không thể lấy thông tin video: " + err.message };
   }
 }
 
-export async function streamYouTubeMedia(req: Request, res: Response, input: string, formatType: string = "mp3"): Promise<void> {
-  const videoId = extractVideoId(input);
-  if (!videoId) {
-    res.status(400).json({ status: false, message: "Link hoặc Video ID không hợp lệ." });
-    return;
-  }
+// ─── yt-dlp stream (Method 1 — best for long videos) ─────────────────────────
 
-  if (!validateToken(videoId, req, res)) {
-    return;
-  }
+async function streamViaYtDlp(videoId: string, isMp4: boolean, res: Response, dispositionMode: string, asciiTitle: string, encodedTitle: string): Promise<boolean> {
+  const ext = isMp4 ? "mp4" : "mp3";
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
 
-  try {
-    const meta = await getYouTubeMetadata(videoId);
-    const title = cleanName(meta.title || "youtube_media");
-    const durationSec = meta.duration || 0;
-    const isMp4 = (formatType && formatType.toLowerCase() === "mp4");
-    const ext = isMp4 ? "mp4" : "mp3";
-
-    const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
-    const encodedTitle = encodeURIComponent(title);
-
-    const dlVal = String(req.query.dl || "").trim();
-    const isDownload = ["2", "3", "true", "attachment"].includes(dlVal) || req.query.download === "1" || req.query.attachment === "1";
-    const dispositionMode = isDownload ? "attachment" : "inline";
-
-    let downloadStream: any = null;
-    let reader: any = null;
-    let firstChunk: Uint8Array | null = null;
-
-    try {
-      const yt = await getYT();
-      downloadStream = await downloadYouTubeStream(yt, videoId, isMp4 ? "video+audio" : "audio");
-      reader = (downloadStream as any).getReader();
-      const { done, value } = await reader.read();
-      if (!done && value && value.length > 0) {
-        firstChunk = value;
-      }
-    } catch (err: any) {
-      console.warn(`[YouTube Stream] Thất bại khi giải mã luồng YouTube (${err.message}). Đang thử chuyển sang SoundCloud Fallback...`);
+  return new Promise((resolve) => {
+    const ytdlpArgs = [
+      "--no-playlist", "--no-warnings",
+      isMp4
+        ? "-f" : "-f",
+      isMp4
+        ? "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best"
+        : "bestaudio[ext=m4a]/bestaudio/best",
+      "-o", "-",
+    ];
+    if (!isMp4) {
+      // Extract audio only
+      ytdlpArgs.splice(-2, 0, "--extract-audio", "--audio-format", "mp3", "--audio-quality", "192K");
     }
+    ytdlpArgs.push(url);
 
-    // Nếu YouTube bị chặn giải mã trên Vercel → thử Piped API fallback
-    if (!firstChunk) {
-      // --- Fallback 1: Piped API (hoạt động cho cả MP3 lẫn MP4) ---
-      try {
-        console.log(`[Piped Fallback] Đang thử lấy stream từ Piped API cho videoId: ${videoId}...`);
-        const pipedResult = await getPipedStreamUrl(videoId, isMp4);
-        if (pipedResult?.streamUrl) {
-          console.log(`[Piped Fallback] ✅ Redirect 302 → ${pipedResult.streamUrl.slice(0, 80)}...`);
-          if (!res.headersSent) {
-            res.setHeader("Access-Control-Allow-Origin", "*");
-            res.redirect(302, pipedResult.streamUrl);
-          }
-          return;
-        }
-      } catch (pipedErr: any) {
-        console.error("[Piped Fallback] Toàn bộ instances thất bại:", pipedErr.message);
-      }
+    const proc = spawn("yt-dlp", ytdlpArgs);
+    let headersSent = false;
 
-      // --- Fallback 2 (chỉ MP3): SoundCloud ---
-      if (!isMp4) {
-        try {
-          const searchQuery = `${meta.title} ${meta.author}`.trim();
-          console.log(`[YouTube Fallback] Tìm kiếm SoundCloud dự phòng cho: "${searchQuery}"...`);
-          const scResult = await searchSoundCloud(searchQuery);
-          if (scResult.status && scResult.data && scResult.data.length > 0) {
-            const scTrackUrl = scResult.data[0].url;
-            console.log(`[YouTube Fallback] Đã tìm thấy luồng SoundCloud dự phòng: ${scTrackUrl}`);
-            return await streamSoundCloudMedia(req, res, scTrackUrl, true);
-          }
-        } catch (scErr: any) {
-          console.error("Lỗi SoundCloud fallback:", scErr.message);
-        }
-      }
-
+    proc.stdout.once("data", (chunk: Buffer) => {
       if (!res.headersSent) {
-        res.status(502).json({
-          status: false,
-          message: `Luồng YouTube (${isMp4 ? "MP4" : "MP3"}) không khả dụng. Tất cả phương thức giải mã (youtubei.js, Piped API${!isMp4 ? ", SoundCloud" : ""}) đều thất bại.`
-        });
+        headersSent = true;
+        res.setHeader("Content-Type", isMp4 ? "video/mp4" : "audio/mpeg");
+        res.setHeader("Content-Disposition", `${dispositionMode}; filename="${asciiTitle}.${ext}"; filename*=UTF-8''${encodedTitle}.${ext}`);
+        res.setHeader("Transfer-Encoding", "chunked");
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.write(chunk);
       }
-      return;
+    });
+
+    proc.stdout.on("data", (chunk: Buffer) => {
+      if (headersSent && !res.writableEnded) res.write(chunk);
+    });
+
+    proc.stdout.on("end", () => {
+      if (headersSent && !res.writableEnded) res.end();
+      resolve(true);
+    });
+
+    proc.on("error", (err) => {
+      console.warn(`[yt-dlp stream] error: ${err.message}`);
+      resolve(false);
+    });
+
+    proc.stderr.on("data", (d: Buffer) => {
+      const msg = d.toString();
+      if (msg.includes("ERROR")) console.warn("[yt-dlp stderr]", msg.slice(0, 200));
+    });
+
+    proc.on("close", (code) => {
+      if (!headersSent) resolve(false);
+    });
+
+    res.on("close", () => {
+      try { proc.kill("SIGTERM"); } catch {}
+    });
+  });
+}
+
+// ─── ytdl-core stream (Method 2 — fallback) ──────────────────────────────────
+
+async function streamViaYtdlCore(videoId: string, isMp4: boolean, req: Request, res: Response, dispositionMode: string, asciiTitle: string, encodedTitle: string): Promise<boolean> {
+  const ext = isMp4 ? "mp4" : "mp3";
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  try {
+    if (!ytdl.validateURL(url)) return false;
+
+    const info = await ytdl.getInfo(url);
+    const format = isMp4
+      ? ytdl.chooseFormat(info.formats, { quality: "highestvideo", filter: "videoandaudio" })
+      : ytdl.chooseFormat(info.formats, { quality: "highestaudio", filter: "audioonly" });
+
+    if (!format) return false;
+
+    const contentLength = format.contentLength ? parseInt(format.contentLength) : null;
+    const range = req.headers.range;
+    let start = 0;
+    let end = contentLength ? contentLength - 1 : undefined;
+
+    if (range && contentLength) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      start = parseInt(parts[0], 10) || 0;
+      end = parts[1] ? parseInt(parts[1], 10) : contentLength - 1;
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${contentLength}`);
+      res.setHeader("Content-Length", (end! - start + 1).toString());
+    } else {
+      res.status(200);
+      if (contentLength) res.setHeader("Content-Length", contentLength.toString());
     }
 
-    // Khi đã xác nhận có chunk dữ liệu hợp lệ (>0 bytes), tiến hành đặt Headers
     res.setHeader("Content-Type", isMp4 ? "video/mp4" : "audio/mpeg");
     res.setHeader("Content-Disposition", `${dispositionMode}; filename="${asciiTitle}.${ext}"; filename*=UTF-8''${encodedTitle}.${ext}`);
     res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Access-Control-Allow-Origin", "*");
 
-    const range = req.headers.range;
-    let totalSize = 0;
-    let seekSeconds = 0;
+    const stream = ytdl.downloadFromInfo(info, {
+      format,
+      ...(range && contentLength ? { range: { start, end: end! } } : {}),
+    });
 
-    if (!isMp4 && durationSec > 0) {
-      totalSize = Math.round(durationSec * 24000);
-    }
+    return new Promise((resolve) => {
+      stream.pipe(res);
+      stream.on("end", () => resolve(true));
+      stream.on("error", (err) => { console.warn("[ytdl-core] error:", err.message); resolve(false); });
+      res.on("close", () => { try { stream.destroy(); } catch {} });
+    });
+  } catch (err: any) {
+    console.warn(`[ytdl-core] failed: ${err.message}`);
+    return false;
+  }
+}
 
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10) || 0;
-      seekSeconds = Math.floor(start / 24000);
+// ─── youtubei.js stream (Method 3) ───────────────────────────────────────────
 
-      if (totalSize > 0) {
-        const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
-        const chunksize = (end - start) + 1;
-        res.status(206);
-        res.setHeader("Content-Range", `bytes ${start}-${end}/${totalSize}`);
-        res.setHeader("Content-Length", chunksize.toString());
-      } else {
-        res.status(206);
-        res.setHeader("Content-Range", `bytes ${start}-/*`);
+async function streamViaYoutubei(videoId: string, isMp4: boolean, res: Response, dispositionMode: string, asciiTitle: string, encodedTitle: string): Promise<boolean> {
+  const ext = isMp4 ? "mp4" : "mp3";
+  const clients = ["IOS", "ANDROID", "WEB", "TV_EMBEDDED"] as const;
+  try {
+    const yt = await getYT();
+    let downloadStream: any = null;
+    for (const client of clients) {
+      try {
+        downloadStream = await yt.download(videoId, { client, quality: "best", type: isMp4 ? "video+audio" : "audio" });
+        break;
+      } catch (e: any) {
+        console.warn(`[youtubei] client ${client} failed: ${e.message}`);
       }
-    } else {
-      res.status(200);
     }
+    if (!downloadStream) return false;
 
-    // Ghi chunk đầu tiên đã nhận được
+    const reader = (downloadStream as any).getReader();
+    const { done, value: firstChunk } = await reader.read();
+    if (done || !firstChunk?.length) return false;
+
+    res.setHeader("Content-Type", isMp4 ? "video/mp4" : "audio/mpeg");
+    res.setHeader("Content-Disposition", `${dispositionMode}; filename="${asciiTitle}.${ext}"; filename*=UTF-8''${encodedTitle}.${ext}`);
+    res.setHeader("Transfer-Encoding", "chunked");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.status(200);
     res.write(firstChunk);
 
-    // Đóng gói các chunk còn lại từ Web Reader sang Node Stream
-    const remainingStream = new Readable({
+    const readable = new Readable({
       async read() {
         try {
           const { done, value } = await reader.read();
-          if (done) {
-            this.push(null);
-          } else {
-            this.push(value);
-          }
-        } catch (err) {
-          this.destroy(err as Error);
-        }
+          if (done) this.push(null);
+          else this.push(value);
+        } catch (err) { this.destroy(err as Error); }
       }
     });
 
     const hasFFmpeg = await isFFmpegAvailable();
-
     if (isMp4 || !hasFFmpeg) {
-      // Stream các chunk còn lại trực tiếp tới client
-      remainingStream.pipe(res);
-      res.on("close", () => {
-        try { remainingStream.destroy(); } catch {}
-      });
-      return;
+      readable.pipe(res);
+      res.on("close", () => { try { readable.destroy(); } catch {} });
+    } else {
+      const ff = spawn("ffmpeg", ["-fflags", "+genpts+discardcorrupt", "-i", "pipe:0", "-vn", "-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", "-f", "mp3", "pipe:1"]);
+      ff.stdin.on("error", () => {});
+      ff.stdout.on("error", () => {});
+      readable.pipe(ff.stdin);
+      ff.stdout.pipe(res);
+      res.on("close", () => { try { readable.destroy(); ff.kill(); } catch {} });
     }
-
-    // Với MP3 trên môi trường có FFmpeg (Local Server): Chuyển đổi qua FFmpeg với fast seeking
-    const ffmpegArgs: string[] = ["-fflags", "+genpts+discardcorrupt"];
-    if (seekSeconds > 0) {
-      ffmpegArgs.push("-ss", seekSeconds.toString());
-    }
-    ffmpegArgs.push(
-      "-i", "pipe:0",
-      "-vn",
-      "-acodec", "libmp3lame",
-      "-ab", "192k",
-      "-ar", "44100",
-      "-f", "mp3",
-      "pipe:1"
-    );
-
-    const ffmpegProc = spawn("ffmpeg", ffmpegArgs);
-
-    ffmpegProc.stdin.on("error", () => {});
-    ffmpegProc.stdout.on("error", () => {});
-
-    ffmpegProc.on("error", () => {
-      try { remainingStream.pipe(res); } catch {}
-    });
-
-    remainingStream.pipe(ffmpegProc.stdin);
-    ffmpegProc.stdout.pipe(res);
-
-    res.on("close", () => {
-      try { remainingStream.destroy(); } catch {}
-      try { ffmpegProc.kill(); } catch {}
-    });
-
-  } catch (error: any) {
-    console.error("Lỗi streamYouTubeMedia:", error);
-    if (!res.headersSent) {
-      res.status(500).json({ status: false, message: "Lỗi kết nối và xử lý YouTube: " + error.message });
-    }
+    return true;
+  } catch (err: any) {
+    console.warn(`[youtubei] stream failed: ${err.message}`);
+    return false;
   }
 }
 
+// ─── streamYouTubeMedia (main export) ─────────────────────────────────────────
+
+export async function streamYouTubeMedia(req: Request, res: Response, input: string, formatType = "mp3"): Promise<void> {
+  const videoId = extractVideoId(input);
+  if (!videoId) {
+    res.status(400).json({ status: false, message: "Link hoặc Video ID YouTube không hợp lệ." });
+    return;
+  }
+  if (!validateToken(videoId, req, res)) return;
+
+  const isMp4 = formatType.toLowerCase() === "mp4";
+  const ext = isMp4 ? "mp4" : "mp3";
+  const meta = await getYouTubeMetadata(videoId);
+  const title = cleanName(meta.title || "youtube_media");
+  const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
+  const encodedTitle = encodeURIComponent(title);
+
+  const dlVal = String(req.query.dl || "").trim();
+  const isDownload = ["2", "3", "true", "attachment"].includes(dlVal) || req.query.download === "1";
+  const dispositionMode = isDownload ? "attachment" : "inline";
+
+  console.log(`[YouTube] 🚀 videoId=${videoId} format=${ext}`);
+
+  // Method 1: yt-dlp (best for long videos, no JS deciphering issues)
+  console.log("[YouTube] Trying yt-dlp...");
+  const ok1 = await streamViaYtDlp(videoId, isMp4, res, dispositionMode, asciiTitle, encodedTitle);
+  if (ok1) { console.log("[YouTube] ✅ yt-dlp succeeded"); return; }
+
+  if (res.headersSent) return;
+
+  // Method 2: @distube/ytdl-core (supports range requests, good for long videos)
+  console.log("[YouTube] Trying @distube/ytdl-core...");
+  const ok2 = await streamViaYtdlCore(videoId, isMp4, req, res, dispositionMode, asciiTitle, encodedTitle);
+  if (ok2) { console.log("[YouTube] ✅ ytdl-core succeeded"); return; }
+
+  if (res.headersSent) return;
+
+  // Method 3: youtubei.js (multi-client fallback)
+  console.log("[YouTube] Trying youtubei.js...");
+  const ok3 = await streamViaYoutubei(videoId, isMp4, res, dispositionMode, asciiTitle, encodedTitle);
+  if (ok3) { console.log("[YouTube] ✅ youtubei.js succeeded"); return; }
+
+  if (res.headersSent) return;
+
+  // Method 4: Piped API redirect
+  console.log("[YouTube] Trying Piped API redirect...");
+  try {
+    const piped = await getPipedStreamUrl(videoId, isMp4);
+    if (piped?.streamUrl) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.redirect(302, piped.streamUrl);
+      return;
+    }
+  } catch {}
+
+  res.status(502).json({
+    status: false,
+    message: `Không thể stream YouTube ${ext.toUpperCase()} videoId=${videoId}. Đã thử: yt-dlp, ytdl-core, youtubei.js, Piped API.`,
+  });
+}

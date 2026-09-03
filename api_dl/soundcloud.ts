@@ -2,8 +2,21 @@ import { Readable } from "stream";
 import crypto from "crypto";
 import { Request, Response } from "express";
 import { DownloadInfoResult, MediaItem, SearchResult, getBaseUrl } from "./youtube.js";
+import { withTimeout } from "./utils/withTimeout.js";
 
 const SECRET_KEY = process.env.DOWNLOAD_SECRET_KEY || "media_dl_secret_15m";
+
+// ─── btch-downloader (dynamic import vì CJS module) ───────────────────────────
+let _btch: any = null;
+async function getBtch(): Promise<any> {
+  if (_btch) return _btch;
+  const { createRequire } = await import("module");
+  const require = createRequire(import.meta.url);
+  _btch = require("btch-downloader");
+  return _btch;
+}
+
+// ─── SoundCloud Client IDs ────────────────────────────────────────────────────
 
 const CLIENT_IDS = [
   process.env.SC_CLIENT_ID,
@@ -19,9 +32,7 @@ async function fetchWithClientId<T>(urlBuilder: (clientId: string) => string): P
     try {
       const url = urlBuilder(clientId);
       const res = await fetch(url);
-      if (res.ok) {
-        return (await res.json()) as T;
-      }
+      if (res.ok) return (await res.json()) as T;
       if (res.status !== 401 && res.status !== 403) {
         throw new Error(`SoundCloud HTTP ${res.status}`);
       }
@@ -31,6 +42,8 @@ async function fetchWithClientId<T>(urlBuilder: (clientId: string) => string): P
   }
   throw lastErr || new Error("Không thể kết nối tới SoundCloud API.");
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function generateToken(id: string | number, expires: number): string {
   return crypto.createHmac("sha256", SECRET_KEY).update(`${id}:${expires}`).digest("hex").slice(0, 16);
@@ -49,10 +62,7 @@ export function validateToken(id: string | number, req: Request, res: Response):
     }
     const expectedToken = generateToken(id, expNum);
     if (token !== expectedToken) {
-      res.status(403).json({
-        status: false,
-        message: "Token xác thực link download không hợp lệ."
-      });
+      res.status(403).json({ status: false, message: "Token xác thực link download không hợp lệ." });
       return false;
     }
   }
@@ -60,11 +70,7 @@ export function validateToken(id: string | number, req: Request, res: Response):
 }
 
 export function cleanName(name: string): string {
-  return (name || "")
-    .replace(/[<>:"/\\|?*]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 180);
+  return (name || "").replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
 export function formatDuration(ms: number): string {
@@ -73,23 +79,22 @@ export function formatDuration(ms: number): string {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  }
+  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
+
+// ─── SoundCloud Search ────────────────────────────────────────────────────────
 
 export async function searchSoundCloud(query?: string): Promise<SearchResult> {
   try {
     const isHome = (!query || typeof query !== "string" || query.trim() === "" || query.trim().toLowerCase() === "home");
     const searchTerm = isHome ? "nhạc trẻ thịnh hành" : query.trim();
 
-    const data = await fetchWithClientId<any>(clientId => 
+    const data = await fetchWithClientId<any>(clientId =>
       `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(searchTerm)}&client_id=${clientId}&limit=20`
     );
 
     let rawTracks = data.collection || [];
-
     let tracks: MediaItem[] = rawTracks.map((track: any) => {
       const ms = track.duration || 0;
       const sec = Math.floor(ms / 1000);
@@ -106,13 +111,12 @@ export async function searchSoundCloud(query?: string): Promise<SearchResult> {
     });
 
     if (isHome) {
-      const validDuration = tracks.filter(t => (t.duration_seconds || 0) >= 120 && (t.duration_seconds || 0) <= 600);
-      const otherDuration = tracks.filter(t => (t.duration_seconds || 0) < 120 || (t.duration_seconds || 0) > 600);
-      tracks = [...validDuration, ...otherDuration];
+      const valid = tracks.filter(t => (t.duration_seconds || 0) >= 120 && (t.duration_seconds || 0) <= 600);
+      const other = tracks.filter(t => (t.duration_seconds || 0) < 120 || (t.duration_seconds || 0) > 600);
+      tracks = [...valid, ...other];
     }
 
     const cleanData = tracks.map(({ duration_seconds, ...rest }) => rest);
-
     return {
       status: true,
       type: isHome ? "home" : "search",
@@ -133,34 +137,58 @@ export async function searchSoundCloud(query?: string): Promise<SearchResult> {
   }
 }
 
+// ─── Resolve SoundCloud track info ───────────────────────────────────────────
+
 async function resolveTrackInfo(input: string): Promise<any> {
   const cleanInput = String(input).trim();
   if (/^\d+$/.test(cleanInput)) {
     return await fetchWithClientId<any>(clientId => `https://api-v2.soundcloud.com/tracks/${cleanInput}?client_id=${clientId}`);
-  } else {
-    return await fetchWithClientId<any>(clientId => `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(cleanInput)}&client_id=${clientId}`);
   }
+  return await fetchWithClientId<any>(clientId => `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(cleanInput)}&client_id=${clientId}`);
 }
+
+// ─── btch SoundCloud download URL ────────────────────────────────────────────
+
+async function getBtchSoundCloudUrl(trackUrl: string): Promise<string | null> {
+  try {
+    const btch = await getBtch();
+    if (typeof btch.soundcloud !== "function") return null;
+
+    const result: any = await withTimeout(
+      btch.soundcloud(trackUrl),
+      15_000,
+      "btch soundcloud timed out"
+    );
+
+    if (!result || result.error || result.status === false) return null;
+
+    const url = result.url || result.mp3 || result.audio || result.download;
+    if (url && typeof url === "string") return url;
+
+    if (Array.isArray(result.medias) && result.medias.length > 0) {
+      return result.medias[0]?.url || null;
+    }
+  } catch (err: any) {
+    console.warn(`[btch SoundCloud] Thất bại: ${err.message}`);
+  }
+  return null;
+}
+
+// ─── SoundCloud Download Info ─────────────────────────────────────────────────
 
 export async function getSoundCloudDownloadInfo(req: Request, input: string, formatType: string = "mp3"): Promise<DownloadInfoResult> {
   try {
-    if (!input) {
-      return { status: false, message: "Thiếu link hoặc Track ID SoundCloud." };
-    }
+    if (!input) return { status: false, message: "Thiếu link hoặc Track ID SoundCloud." };
 
     const track = await resolveTrackInfo(input);
-    if (!track) {
-      return { status: false, message: "Không tìm thấy bài hát trên SoundCloud." };
-    }
+    if (!track) return { status: false, message: "Không tìm thấy bài hát trên SoundCloud." };
 
     const title = track.title || "SoundCloud Track";
     const author = track.user?.username || "Không rõ";
     const duration = formatDuration(track.duration);
     const artwork = track.artwork_url || track.user?.avatar_url || "";
 
-    const type = "mp3";
     const baseUrl = getBaseUrl(req);
-
     const expires = Date.now() + 15 * 60 * 1000;
     const token = generateToken(track.id, expires);
     const stream_url = `${baseUrl}/api/v1/soundcloud/stream/${track.id}.mp3?expires=${expires}&token=${token}&dl=1`;
@@ -169,27 +197,26 @@ export async function getSoundCloudDownloadInfo(req: Request, input: string, for
     return {
       status: true,
       id: String(track.id),
-      title: title,
-      author: author,
-      duration: duration,
+      title,
+      author,
+      duration,
       thumbnail: artwork,
-      artwork: artwork,
-      type: type,
+      artwork,
+      type: "mp3",
       expires_in: "15 phút",
       expires_at: new Date(expires).toISOString(),
-      stream_url: stream_url,
-      download_url: download_url
+      stream_url,
+      download_url
     };
   } catch (error: any) {
     console.error("Lỗi getSoundCloudDownloadInfo:", error);
-    return {
-      status: false,
-      message: "Không thể lấy thông tin download SoundCloud: " + (error.message || "Unknown error")
-    };
+    return { status: false, message: "Không thể lấy thông tin download SoundCloud: " + (error.message || "Unknown error") };
   }
 }
 
-export async function streamSoundCloudMedia(req: Request, res: Response, input: string, skipTokenCheck: boolean = false): Promise<void> {
+// ─── Stream SoundCloud Media ──────────────────────────────────────────────────
+
+export async function streamSoundCloudMedia(req: Request, res: Response, input: string, skipTokenCheck = false): Promise<void> {
   if (!input) {
     res.status(400).json({ status: false, message: "Thiếu link hoặc Track ID SoundCloud." });
     return;
@@ -202,11 +229,34 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
       return;
     }
 
-    if (!skipTokenCheck && !validateToken(track.id, req, res)) {
-      return;
-    }
+    if (!skipTokenCheck && !validateToken(track.id, req, res)) return;
 
     const title = cleanName(track.title || "soundcloud_track");
+    const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
+    const encodedTitle = encodeURIComponent(title);
+
+    const dlVal = String(req.query.dl || "").trim();
+    const isDownload = ["2", "3", "true", "attachment"].includes(dlVal) || req.query.download === "1" || req.query.attachment === "1";
+    const dispositionMode = isDownload ? "attachment" : "inline";
+
+    // ─── Phương thức 1: btch-downloader (ưu tiên) ─────────────────────────
+    const permalinkUrl = track.permalink_url || input;
+    if (permalinkUrl && permalinkUrl.startsWith("http")) {
+      console.log(`[SoundCloud] 🚀 Thử btch-downloader cho: ${permalinkUrl}...`);
+      const btchUrl = await getBtchSoundCloudUrl(permalinkUrl);
+      if (btchUrl) {
+        console.log(`[SoundCloud] ✅ btch-downloader redirect 302...`);
+        if (!res.headersSent) {
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          res.setHeader("Content-Disposition", `${dispositionMode}; filename="${asciiTitle}.mp3"; filename*=UTF-8''${encodedTitle}.mp3`);
+          res.redirect(302, btchUrl);
+        }
+        return;
+      }
+      console.warn(`[SoundCloud] ⚠️ btch-downloader thất bại. Dùng SoundCloud API trực tiếp...`);
+    }
+
+    // ─── Phương thức 2: SoundCloud API trực tiếp ──────────────────────────
     const transcodings = track.media?.transcodings || [];
     if (!transcodings.length) {
       res.status(400).json({ status: false, message: "Không tìm thấy media stream cho bài hát này." });
@@ -214,7 +264,6 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
     }
 
     const prog = transcodings.find((t: any) => t.format?.protocol === "progressive") || transcodings[0];
-
     const streamData = await fetchWithClientId<any>(clientId => `${prog.url}?client_id=${clientId}`);
     const directUrl = streamData.url;
 
@@ -228,13 +277,6 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
       res.status(500).json({ status: false, message: "Lỗi khi tải stream dữ liệu âm thanh." });
       return;
     }
-
-    const asciiTitle = title.replace(/[^\x00-\x7F]/g, "_");
-    const encodedTitle = encodeURIComponent(title);
-
-    const dlVal = String(req.query.dl || "").trim();
-    const isDownload = ["2", "3", "true", "attachment"].includes(dlVal) || req.query.download === "1" || req.query.attachment === "1";
-    const dispositionMode = isDownload ? "attachment" : "inline";
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Disposition", `${dispositionMode}; filename="${asciiTitle}.mp3"; filename*=UTF-8''${encodedTitle}.mp3`);
@@ -262,15 +304,10 @@ export async function streamSoundCloudMedia(req: Request, res: Response, input: 
     }
 
     const nodeStream = Readable.fromWeb(mediaRes.body as any);
-    res.on("error", () => {
-      try { nodeStream.destroy(); } catch {}
-    });
-
+    res.on("error", () => { try { nodeStream.destroy(); } catch {} });
     nodeStream.pipe(res);
+    res.on("close", () => { try { nodeStream.destroy(); } catch {} });
 
-    res.on("close", () => {
-      try { nodeStream.destroy(); } catch {}
-    });
   } catch (error: any) {
     console.error("Lỗi streamSoundCloudMedia:", error);
     if (!res.headersSent) {
