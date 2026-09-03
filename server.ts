@@ -974,16 +974,30 @@ app.get("/api/dashboard", authenticateToken as any, async (req: Request, res: Re
 // --- YOUTUBE & SOUNDCLOUD MEDIA DOWNLOADER API V1 ---
 app.get(["/api/v1", "/api/v1/", "/apiv1", "/apiv1/", "/v1", "/v1/"], (req: Request, res: Response) => renderDocHTML(req, res));
 
+// Route mới: /file/ (download → cache → serve)
+app.get(["/api/v1/youtube/file/:filename", "/apiv1/youtube/file/:filename", "/v1/youtube/file/:filename"], async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const filename = req.params.filename;
+    const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
+    const input = filename.replace(/\.(mp3|mp4)$/i, "");
+    return await serveYouTubeFile(req, res, input, type);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Legacy /stream/ → alias của /file/
 app.get(["/api/v1/youtube/stream/:filename", "/apiv1/youtube/stream/:filename", "/v1/youtube/stream/:filename"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const filename = req.params.filename;
     const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
     const input = filename.replace(/\.(mp3|mp4)$/i, "");
-    return await streamYouTubeMedia(req, res, input, type);
+    return await serveYouTubeFile(req, res, input, type);
   } catch (error) {
     next(error);
   }
 });
+
 
 app.get(["/api/v1/youtube", "/apiv1/youtube", "/v1/youtube"], async (req: Request, res: Response, next: NextFunction) => {
   try {
