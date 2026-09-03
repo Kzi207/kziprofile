@@ -25,8 +25,6 @@ export default defineConfig(() => {
           manualChunks: {
             // Tách React + ReactDOM thành chunk riêng
             'vendor-react': ['react', 'react-dom'],
-            // Tách các thư viện UI/animation lớn nếu có
-            'vendor-router': ['react-router-dom'],
           },
         },
       },
