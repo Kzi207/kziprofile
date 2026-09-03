@@ -27,11 +27,19 @@ cloudinary.config({
 });
 
 
-// __dirname tương thích cả ESM lẫn CJS
-const __filename = typeof import.meta !== 'undefined' && import.meta.url
-  ? fileURLToPath(import.meta.url)
-  : __filename ?? '';
-const __dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(__filename);
+// __dirname tương thích ESM & CJS build
+let __filename_: string;
+let __dirname_: string;
+try {
+  // ESM
+  __filename_ = fileURLToPath(import.meta.url);
+  __dirname_ = path.dirname(__filename_);
+} catch {
+  // CJS fallback (__filename is available globally in CJS)
+  __filename_ = typeof __filename !== "undefined" ? __filename : process.cwd() + "/server.js";
+  __dirname_ = path.dirname(__filename_);
+}
+const __dirnameSafe = __dirname_;
 
 let prismaInstance: PrismaClient | null = null;
 const prisma = new Proxy({} as PrismaClient, {
