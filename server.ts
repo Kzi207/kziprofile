@@ -11,7 +11,7 @@ import { CHILL_LINKS_DEFAULT } from "./src/data/chill_links.js";
 import { GAI_LINKS_DEFAULT } from "./src/data/gai_links.js";
 import { MUSIC_LINKS_DEFAULT } from "./src/data/music_links.js";
 import { v2 as cloudinary } from "cloudinary";
-import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia } from "./api_dl/youtube.js";
+import { searchYouTube, getYouTubeDownloadInfo, serveYouTubeFile } from "./api_dl/youtube.js";
 import { searchSoundCloud, getSoundCloudDownloadInfo, streamSoundCloudMedia } from "./api_dl/soundcloud.js";
 import { parseDownloadInput, renderDocHTML } from "./api_dl/index.js";
 
@@ -27,8 +27,11 @@ cloudinary.config({
 });
 
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// __dirname tương thích cả ESM lẫn CJS
+const __filename = typeof import.meta !== 'undefined' && import.meta.url
+  ? fileURLToPath(import.meta.url)
+  : __filename ?? '';
+const __dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(__filename);
 
 let prismaInstance: PrismaClient | null = null;
 const prisma = new Proxy({} as PrismaClient, {
