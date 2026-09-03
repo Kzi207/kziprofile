@@ -283,6 +283,75 @@ export async function searchYouTube(query?: string): Promise<SearchResult> {
   }
 }
 
+// ─── yt-dlp -g: get direct CDN URL (supports browser Range/seek natively) ─────
+
+export async function getYtDlpDirectUrl(videoId: string, format: "audio" | "video" | "both" = "audio"): Promise<{ audioUrl?: string; videoUrl?: string }> {
+  const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  const run = (fmt: string): Promise<string | null> => new Promise((resolve) => {
+    const proc = spawn("yt-dlp", ["-g", "-f", fmt, "--no-playlist", "--no-warnings", ytUrl]);
+    let out = "";
+    proc.stdout.on("data", (d: Buffer) => { out += d.toString(); });
+    proc.on("close", (code) => resolve(code === 0 && out.trim() ? out.trim().split("\n")[0].trim() : null));
+    proc.on("error", () => resolve(null));
+    setTimeout(() => { try { proc.kill(); } catch {} resolve(null); }, 10000);
+  });
+
+  if (format === "audio") {
+    const audioUrl = await run("bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio") ?? undefined;
+    return { audioUrl };
+  }
+  if (format === "video") {
+    // Combined stream up to 720p (single file, browser-compatible)
+    const videoUrl = await run("best[ext=mp4][height<=720]/best[ext=mp4]/best") ?? undefined;
+    return { videoUrl };
+  }
+  // Both
+  const [audioUrl, videoUrl] = await Promise.all([
+    run("bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio"),
+    run("best[ext=mp4][height<=720]/best[ext=mp4]/best"),
+  ]);
+  return { audioUrl: audioUrl ?? undefined, videoUrl: videoUrl ?? undefined };
+}
+
+// ─── YouTube Play Info (for inline browser playback) ─────────────────────────
+
+export async function getYouTubePlayInfo(req: Request, input: string): Promise<object> {
+  const videoId = extractVideoId(input);
+  if (!videoId) return { status: false, message: "Không tìm thấy Video ID hợp lệ." };
+
+  try {
+    const [meta, urls] = await Promise.all([
+      getYouTubeMetadata(videoId),
+      getYtDlpDirectUrl(videoId, "both"),
+    ]);
+    const baseUrl = getBaseUrl(req);
+    const expires = Date.now() + 60 * 60 * 1000; // 1 giờ
+    const token = generateToken(videoId, expires);
+
+    return {
+      status: true,
+      id: videoId,
+      title: meta.title,
+      author: meta.author,
+      duration: formatDuration(meta.duration),
+      duration_seconds: meta.duration,
+      thumbnail: meta.thumbnail,
+      // Direct CDN URLs — browser có thể seek/tua tự nhiên
+      audio_url: urls.audioUrl || null,
+      video_url: urls.videoUrl || null,
+      // Fallback stream qua server (không seek được nhưng ổn định hơn)
+      stream_audio: `${baseUrl}/api/v1/youtube/stream/${videoId}.mp3?expires=${expires}&token=${token}&dl=1`,
+      stream_video: `${baseUrl}/api/v1/youtube/stream/${videoId}.mp4?expires=${expires}&token=${token}&dl=1`,
+      download_audio: `${baseUrl}/api/v1/youtube/stream/${videoId}.mp3?expires=${expires}&token=${token}&dl=2`,
+      download_video: `${baseUrl}/api/v1/youtube/stream/${videoId}.mp4?expires=${expires}&token=${token}&dl=2`,
+      player_url: `${baseUrl}/api/v1/youtube/player?url=https://youtu.be/${videoId}`,
+    };
+  } catch (err: any) {
+    return { status: false, message: "Lỗi lấy thông tin phát: " + err.message };
+  }
+}
+
 // ─── YouTube Download Info ────────────────────────────────────────────────────
 
 export async function getYouTubeDownloadInfo(req: Request, input: string, formatType = "mp3"): Promise<DownloadInfoResult> {

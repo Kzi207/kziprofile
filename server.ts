@@ -11,7 +11,7 @@ import { CHILL_LINKS_DEFAULT } from "./src/data/chill_links.js";
 import { GAI_LINKS_DEFAULT } from "./src/data/gai_links.js";
 import { MUSIC_LINKS_DEFAULT } from "./src/data/music_links.js";
 import { v2 as cloudinary } from "cloudinary";
-import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia } from "./api_dl/youtube.js";
+import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia, getYouTubePlayInfo, getYtDlpDirectUrl, extractVideoId, getYouTubeMetadata, cleanName, formatDuration } from "./api_dl/youtube.js";
 import { searchSoundCloud, getSoundCloudDownloadInfo, streamSoundCloudMedia } from "./api_dl/soundcloud.js";
 import { parseDownloadInput, renderDocHTML } from "./api_dl/index.js";
 import {
@@ -1002,6 +1002,120 @@ app.get(["/api/fetch-media", "/api/v1/fetch-media", "/apiv1/fetch-media", "/v1/f
     }
     next(error);
   }
+});
+
+// YouTube Info — trả JSON với direct CDN URLs có thể phát thẳng từ trình duyệt
+app.get(["/api/v1/youtube/info", "/apiv1/youtube/info", "/v1/youtube/info"], async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const input = (req.query.url || req.query.id || req.query.v) as string;
+    if (!input) return res.status(400).json({ status: false, message: "Thiếu tham số ?url= hoặc ?id=" });
+    const info = await getYouTubePlayInfo(req, input);
+    return res.json(info);
+  } catch (error) { next(error); }
+});
+
+// YouTube Player — trang HTML nhúng trình phát ngay trên trình duyệt
+app.get(["/api/v1/youtube/player", "/apiv1/youtube/player", "/v1/youtube/player"], async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const input = (req.query.url || req.query.id || req.query.v) as string;
+    if (!input) return res.status(400).send("<h2>Thiếu tham số ?url=</h2>");
+
+    const videoId = extractVideoId(input);
+    if (!videoId) return res.status(400).send("<h2>Video ID không hợp lệ.</h2>");
+
+    const [meta, urls] = await Promise.all([
+      getYouTubeMetadata(videoId),
+      getYtDlpDirectUrl(videoId, "both"),
+    ]);
+
+    const title = cleanName(meta.title || "YouTube Player");
+    const duration = formatDuration(meta.duration);
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(`<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Inter',sans-serif;background:#0a0e17;color:#f1f5f9;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:24px 16px}
+    .card{width:100%;max-width:800px;background:#111827;border:1px solid #1f2d44;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+    .thumb{position:relative;width:100%;aspect-ratio:16/9;background:#000}
+    .thumb img{width:100%;height:100%;object-fit:cover;opacity:.85}
+    .thumb .play-over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3);cursor:pointer;transition:.2s}
+    .thumb .play-over:hover{background:rgba(0,0,0,.1)}
+    .thumb .play-over svg{width:72px;height:72px;fill:#fff;drop-shadow:0 0 12px rgba(0,0,0,.8)}
+    .info{padding:20px 24px}
+    .info h1{font-size:1.15rem;font-weight:700;margin-bottom:6px;line-height:1.4}
+    .info p{color:#64748b;font-size:.88rem;margin-bottom:16px}
+    .media-section{margin-top:0;padding:0 24px 24px}
+    .media-label{font-size:.8rem;font-weight:600;color:#38bdf8;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
+    audio,video{width:100%;border-radius:8px;background:#000;outline:none;margin-bottom:4px}
+    video{max-height:420px}
+    .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+    .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:8px;font-size:.875rem;font-weight:600;text-decoration:none;cursor:pointer;border:none;transition:.2s}
+    .btn-dl-audio{background:linear-gradient(90deg,#10b981,#059669);color:#fff}
+    .btn-dl-video{background:linear-gradient(90deg,#3b82f6,#1d4ed8);color:#fff}
+    .btn-yt{background:#1f2937;color:#94a3b8;border:1px solid #334155}
+    .btn:hover{transform:translateY(-1px);opacity:.9}
+    .no-src{color:#ef4444;font-size:.85rem;padding:10px 0}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="thumb" id="thumbArea">
+      <img src="${meta.thumbnail}" alt="${title}" id="thumbImg">
+      <div class="play-over" id="playBtn" onclick="startPlay()">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="rgba(0,0,0,.5)"/><path d="M9.5 7.5v9l7-4.5-7-4.5z"/></svg>
+      </div>
+    </div>
+
+    <div class="info">
+      <h1>${title}</h1>
+      <p>🎵 ${meta.author} &nbsp;·&nbsp; ⏱ ${duration}</p>
+    </div>
+
+    <div class="media-section">
+      ${urls.audioUrl ? `
+      <div class="media-label">🎧 Nghe trực tiếp (Audio)</div>
+      <audio id="audioPlayer" controls preload="metadata">
+        <source src="${urls.audioUrl}" type="audio/mp4">
+        Trình duyệt của bạn không hỗ trợ audio.
+      </audio>` : ""}
+
+      ${urls.videoUrl ? `
+      <div class="media-label" style="margin-top:16px">🎬 Xem trực tiếp (Video)</div>
+      <video id="videoPlayer" controls preload="metadata" poster="${meta.thumbnail}">
+        <source src="${urls.videoUrl}" type="video/mp4">
+        Trình duyệt của bạn không hỗ trợ video.
+      </video>` : ""}
+
+      ${!urls.audioUrl && !urls.videoUrl ? `<p class="no-src">⚠️ Không thể lấy đường dẫn phát trực tiếp cho video này. Thử tải về bên dưới.</p>` : ""}
+
+      <div class="actions">
+        ${urls.audioUrl ? `<a class="btn btn-dl-audio" href="${urls.audioUrl}" download="${title}.m4a">⬇️ Tải Audio (M4A)</a>` : ""}
+        ${urls.videoUrl ? `<a class="btn btn-dl-video" href="${urls.videoUrl}" download="${title}.mp4">⬇️ Tải Video (MP4)</a>` : ""}
+        <a class="btn btn-yt" href="https://www.youtube.com/watch?v=${videoId}" target="_blank">▶ Mở YouTube</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function startPlay() {
+      const audio = document.getElementById('audioPlayer');
+      const video = document.getElementById('videoPlayer');
+      const btn = document.getElementById('playBtn');
+      if (btn) btn.style.display = 'none';
+      if (video) { video.scrollIntoView({behavior:'smooth'}); video.play(); }
+      else if (audio) { audio.play(); }
+    }
+  </script>
+</body>
+</html>`);
+  } catch (error) { next(error); }
 });
 
 // Direct Stream endpoints
