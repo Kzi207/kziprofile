@@ -11,7 +11,7 @@ import { CHILL_LINKS_DEFAULT } from "./src/data/chill_links.js";
 import { GAI_LINKS_DEFAULT } from "./src/data/gai_links.js";
 import { MUSIC_LINKS_DEFAULT } from "./src/data/music_links.js";
 import { v2 as cloudinary } from "cloudinary";
-import { searchYouTube, getYouTubeDownloadInfo, serveYouTubeFile } from "./api_dl/youtube.js";
+import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia } from "./api_dl/youtube.js";
 import { searchSoundCloud, getSoundCloudDownloadInfo, streamSoundCloudMedia } from "./api_dl/soundcloud.js";
 import { parseDownloadInput, renderDocHTML } from "./api_dl/index.js";
 
@@ -27,19 +27,8 @@ cloudinary.config({
 });
 
 
-// __dirname tương thích ESM & CJS build
-let __filename_: string;
-let __dirname_: string;
-try {
-  // ESM
-  __filename_ = fileURLToPath(import.meta.url);
-  __dirname_ = path.dirname(__filename_);
-} catch {
-  // CJS fallback (__filename is available globally in CJS)
-  __filename_ = typeof __filename !== "undefined" ? __filename : process.cwd() + "/server.js";
-  __dirname_ = path.dirname(__filename_);
-}
-const __dirnameSafe = __dirname_;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let prismaInstance: PrismaClient | null = null;
 const prisma = new Proxy({} as PrismaClient, {
@@ -974,30 +963,16 @@ app.get("/api/dashboard", authenticateToken as any, async (req: Request, res: Re
 // --- YOUTUBE & SOUNDCLOUD MEDIA DOWNLOADER API V1 ---
 app.get(["/api/v1", "/api/v1/", "/apiv1", "/apiv1/", "/v1", "/v1/"], (req: Request, res: Response) => renderDocHTML(req, res));
 
-// Route mới: /file/ (download → cache → serve)
-app.get(["/api/v1/youtube/file/:filename", "/apiv1/youtube/file/:filename", "/v1/youtube/file/:filename"], async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const filename = req.params.filename;
-    const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
-    const input = filename.replace(/\.(mp3|mp4)$/i, "");
-    return await serveYouTubeFile(req, res, input, type);
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Legacy /stream/ → alias của /file/
 app.get(["/api/v1/youtube/stream/:filename", "/apiv1/youtube/stream/:filename", "/v1/youtube/stream/:filename"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const filename = req.params.filename;
     const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
     const input = filename.replace(/\.(mp3|mp4)$/i, "");
-    return await serveYouTubeFile(req, res, input, type);
+    return await streamYouTubeMedia(req, res, input, type);
   } catch (error) {
     next(error);
   }
 });
-
 
 app.get(["/api/v1/youtube", "/apiv1/youtube", "/v1/youtube"], async (req: Request, res: Response, next: NextFunction) => {
   try {

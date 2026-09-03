@@ -6,12 +6,3 @@ coverage/
 *.log
 .env*
 !.env.example
-
-# yt-dlp binary (tải riêng khi deploy)
-api_dl/bin/
-
-# Cache file âm thanh/video (generated at runtime)
-api_dl/cache/
-
-# Scratch test files
-scratch/

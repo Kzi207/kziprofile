@@ -1,8 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import "dotenv/config";
-import path from "path";
-import { searchYouTube, getYouTubeDownloadInfo, serveYouTubeFile, getBaseUrl } from "./youtube.js";
+import { searchYouTube, getYouTubeDownloadInfo, streamYouTubeMedia, getBaseUrl } from "./youtube.js";
 import { searchSoundCloud, getSoundCloudDownloadInfo, streamSoundCloudMedia } from "./soundcloud.js";
 
 const app = express();
@@ -240,7 +239,7 @@ export function renderDocHTML(req: Request, res: Response) {
         <div class="header">
           <h1>🎵 Media Downloader & Search API</h1>
           <p>Tài liệu kết nối RESTful API chính thức cho YouTube & SoundCloud v1</p>
-          <span class="tag-version">GET /api/v1 • Download → Cache → Link tĩnh (15 phút)</span>
+          <span class="tag-version">GET /api/v1 • Link Tải Tồn Tại 15 Phút</span>
         </div>
 
         <!-- YOUTUBE SECTION -->
@@ -270,8 +269,7 @@ export function renderDocHTML(req: Request, res: Response) {
             <span class="method-badge">GET</span>
             <span class="endpoint-path">/api/v1/youtube?download={link}&type={mp3|mp4}</span>
           </div>
-          <p class="endpoint-desc">2. Lấy JSON info (tên bài, tác giả, thời lượng, link serve hết hạn 15p). File sẽ được tải về server ngầm nếu chưa cache.</p>
-
+          <p class="endpoint-desc">2. Lấy JSON Download Info (Tên bài hát, Tác giả, Thời lượng, Link tải hết hạn 15p).</p>
 
           <div class="url-box">
             <span>GET ${baseUrl}/api/v1/youtube?download=https://youtu.be/boKJ5XDs_mY&type=mp3</span>
@@ -287,13 +285,13 @@ export function renderDocHTML(req: Request, res: Response) {
         <div class="endpoint-card">
           <div class="endpoint-header">
             <span class="method-badge">GET</span>
-            <span class="endpoint-path">/api/v1/youtube/file/{videoId}.{mp3|mp4}</span>
+            <span class="endpoint-path">/api/v1/youtube?stream={videoId}&type={mp3|mp4}</span>
           </div>
-          <p class="endpoint-desc">3. Serve file từ cache server (tải về server trước, không stream qua YouTube). Hỗ trợ Range requests (tua bài). Thêm <code>?dl=1</code> để tải về máy.</p>
+          <p class="endpoint-desc">3. Stream trực tiếp file âm thanh / video MP3 hoặc MP4.</p>
 
           <div class="url-box">
-            <span>GET ${baseUrl}/api/v1/youtube/file/boKJ5XDs_mY.mp3?expires=...&token=...</span>
-            <a href="${baseUrl}/api/v1/youtube?download=https://youtu.be/boKJ5XDs_mY&type=mp3" target="_blank" class="btn-test">Lấy Link ↗</a>
+            <span>GET ${baseUrl}/api/v1/youtube?stream=boKJ5XDs_mY&type=mp3</span>
+            <a href="${baseUrl}/api/v1/youtube?stream=boKJ5XDs_mY&type=mp3" target="_blank" class="btn-test">Stream MP3 ↗</a>
           </div>
         </div>
 
@@ -360,22 +358,16 @@ export function renderDocHTML(req: Request, res: Response) {
 app.get(["/api/v1", "/api/v1/", "/apiv1", "/apiv1/", "/v1", "/v1/"], (req: Request, res: Response) => renderDocHTML(req, res));
 app.get("/", (req: Request, res: Response) => renderDocHTML(req, res));
 
-// YouTube File Serve Endpoint (download → cache → serve)
-app.get(["/api/v1/youtube/file/:filename", "/apiv1/youtube/file/:filename", "/v1/youtube/file/:filename"], async (req: Request, res: Response, next: NextFunction) => {
+// YouTube Stream Endpoint
+app.get(["/api/v1/youtube/stream/:filename", "/apiv1/youtube/stream/:filename", "/v1/youtube/stream/:filename"], async (req: Request, res: Response, next: NextFunction) => {
   try {
     const filename = req.params.filename;
     const type = filename.endsWith(".mp4") ? "mp4" : "mp3";
     const input = filename.replace(/\.(mp3|mp4)$/i, "");
-    return await serveYouTubeFile(req, res, input, type);
+    return await streamYouTubeMedia(req, res, input, type);
   } catch (error) {
     next(error);
   }
-});
-
-// Legacy /stream/ redirect → /file/
-app.get(["/api/v1/youtube/stream/:filename", "/apiv1/youtube/stream/:filename"], (req: Request, res: Response) => {
-  const newPath = req.path.replace("/stream/", "/file/");
-  res.redirect(301, newPath + (req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""));
 });
 
 // YouTube API Endpoint
@@ -385,7 +377,7 @@ app.get(["/api/v1/youtube", "/apiv1/youtube", "/v1/youtube"], async (req: Reques
 
     if (stream) {
       const parsed = parseDownloadInput(stream, type, format);
-      return await serveYouTubeFile(req, res, parsed.url, parsed.type);
+      return await streamYouTubeMedia(req, res, parsed.url, parsed.type);
     }
 
     if (download) {
@@ -446,8 +438,3 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 });
 
 export default app;
-
-app.listen(PORT, () => {
-  console.log(`✅ Media Downloader API đang chạy tại http://localhost:${PORT}`);
-  console.log(`📁 Cache thư mục: ${path.join(process.cwd(), "cache")}`);
-});
