@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import path from "path";
+import * as fs from "fs";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
 import jwt from "jsonwebtoken";
@@ -1196,9 +1197,840 @@ app.get(["/api/v1/:platform", "/apiv1/:platform", "/v1/:platform", "/api/downloa
 
 
 // ==========================================
-// VITE OR STATIC FILE SERVING
+// FME-CTUT DRIVE GALLERY API
 // ==========================================
 
+const FME_IMAGE_EXTS = new Set([
+  ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".ico", ".avif", ".heic", ".tiff"
+]);
+
+function formatBytes(bytes: number, decimals = 2) {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
+}
+
+function getFmeCtutDirs(): string[] {
+  const dirs = [
+    path.join(process.cwd(), "public", "fme-ctut"),
+    path.join(process.cwd(), "dist", "fme-ctut"),
+  ];
+  return dirs.filter((d) => fs.existsSync(d));
+}
+
+// ==========================================
+// GOOGLE DRIVE SYSTEM API (MULTI-FOLDER, PASSWORD & SHARE)
+// ==========================================
+
+const DRIVE_IMAGE_EXTS = new Set([
+  ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".ico", ".avif", ".heic", ".tiff"
+]);
+
+const GITHUB_OWNER = process.env.GITHUB_OWNER || "Kzi207";
+const GITHUB_REPO = process.env.GITHUB_REPO || "kziprofile";
+const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "master";
+
+interface DriveFolderMeta {
+  id: string;
+  name: string;
+  description?: string;
+  hasPassword: boolean;
+  passwordHash?: string;
+  allowEdit: boolean;
+  allowDownload: boolean;
+  shareToken: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const DEFAULT_DRIVE_FOLDERS: DriveFolderMeta[] = [
+  {
+    id: "fme-ctut",
+    name: "FME - CTUT",
+    description: "Thư mục hình ảnh Khoa Cơ khí CTUT",
+    hasPassword: false,
+    allowEdit: true,
+    allowDownload: true,
+    shareToken: "fme-ctut-default-share",
+    createdAt: "2026-09-21T00:00:00.000Z",
+    updatedAt: "2026-09-24T00:00:00.000Z",
+  }
+];
+
+function getEffectiveGithubToken(req: Request): string | null {
+  const headerToken = req.headers["x-github-token"] as string;
+  if (headerToken && headerToken.trim()) return headerToken.trim();
+  const envToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (envToken && envToken.trim()) return envToken.trim();
+  return null;
+}
+
+function slugifyFolderName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "folder-" + Date.now();
+}
+
+async function getStoredFolders(): Promise<DriveFolderMeta[]> {
+  // Primary: Read from local folders.json
+  const localFile = path.join(process.cwd(), "public", "drive", "folders.json");
+  if (fs.existsSync(localFile)) {
+    try {
+      const content = fs.readFileSync(localFile, "utf-8");
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {}
+  }
+
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: "drive_folders" } });
+    if (row && row.value) {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn("DB read folders error:", e);
+  }
+
+  return DEFAULT_DRIVE_FOLDERS;
+}
+
+async function saveStoredFolders(folders: DriveFolderMeta[]): Promise<void> {
+  const jsonStr = JSON.stringify(folders, null, 2);
+  try {
+    await prisma.setting.upsert({
+      where: { key: "drive_folders" },
+      update: { value: jsonStr, updatedAt: new Date() },
+      create: { key: "drive_folders", value: jsonStr, description: "Drive Folders Metadata" },
+    });
+  } catch (e) {
+    console.warn("DB save folders error:", e);
+  }
+
+  try {
+    const dir = path.join(process.cwd(), "public", "drive");
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "folders.json"), jsonStr);
+    const distDir = path.join(process.cwd(), "dist", "drive");
+    if (fs.existsSync(distDir)) fs.writeFileSync(path.join(distDir, "folders.json"), jsonStr);
+  } catch (e) {}
+}
+
+async function resolveFolderDirs(folderKey: string): Promise<{ folderName: string; localDirs: string[] }> {
+  const folders = await getStoredFolders();
+  const matched: any = folders.find(
+    (f: any) => String(f.id) === String(folderKey) || f.folder === folderKey || f.name === folderKey
+  );
+  const rawName = matched ? (matched.folder || matched.name || matched.id) : folderKey;
+  const slugName = slugifyFolderName(rawName);
+
+  const localDirs: string[] = [];
+  const candidates = [
+    path.join(process.cwd(), "public", "drive", rawName),
+    path.join(process.cwd(), "public", rawName),
+    path.join(process.cwd(), "public", "drive", slugName),
+    path.join(process.cwd(), "public", slugName),
+    path.join(process.cwd(), "dist", "drive", rawName),
+    path.join(process.cwd(), "dist", rawName),
+    path.join(process.cwd(), "dist", "drive", slugName),
+    path.join(process.cwd(), "dist", slugName),
+  ];
+
+  for (const c of candidates) {
+    if (fs.existsSync(c) && !localDirs.includes(c)) {
+      localDirs.push(c);
+    }
+  }
+
+  return { folderName: rawName, localDirs };
+}
+
+function resolveFolderPaths(folderId: string): { githubPath: string; localDirs: string[] } {
+  const safeId = path.basename(folderId);
+  return {
+    githubPath: `public/drive/${safeId}`,
+    localDirs: [
+      path.join(process.cwd(), "public", "drive", safeId),
+      path.join(process.cwd(), "public", safeId),
+      path.join(process.cwd(), "dist", "drive", safeId),
+      path.join(process.cwd(), "dist", safeId),
+    ],
+  };
+}
+
+// 0. GitHub Status
+app.get("/api/drive/github-status", (req: Request, res: Response) => {
+  const token = getEffectiveGithubToken(req);
+  return res.json({
+    success: true,
+    hasToken: !!token,
+    owner: GITHUB_OWNER,
+    repo: GITHUB_REPO,
+    branch: GITHUB_BRANCH,
+  });
+});
+
+// 1. Get All Folders
+app.get("/api/drive/folders", async (req: Request, res: Response) => {
+  try {
+    const folders = await getStoredFolders();
+    const shareKey = (req.query.share as string)?.trim();
+
+    let safeFolders = await Promise.all(
+      folders.map(async (f: any) => {
+        const folderName = f.folder || f.name || f.id;
+        const { localDirs } = await resolveFolderDirs(f.id || folderName);
+
+        // Auto count images in the directory
+        let count = 0;
+        const countedFiles = new Set<string>();
+        for (const d of localDirs) {
+          if (fs.existsSync(d)) {
+            try {
+              const items = fs.readdirSync(d);
+              for (const item of items) {
+                if (item.startsWith(".") || item.toLowerCase() === "index.html" || item.toLowerCase() === "manifest.json" || item.toLowerCase() === "folders.json") continue;
+                const ext = path.extname(item).toLowerCase();
+                if (DRIVE_IMAGE_EXTS.has(ext) && !countedFiles.has(item)) {
+                  countedFiles.add(item);
+                  count++;
+                }
+              }
+            } catch (e) {}
+          }
+        }
+
+        return {
+          id: String(f.id),
+          folder: folderName,
+          name: folderName,
+          description: f.description || "",
+          filesCount: count,
+          shareId: String(f.id),
+          hasPassword: !!f.passwordHash,
+          allowEdit: f.allowEdit !== false,
+          allowDownload: f.allowDownload !== false,
+          createdAt: f.createdAt || new Date().toISOString(),
+          updatedAt: f.updatedAt || new Date().toISOString(),
+        };
+      })
+    );
+
+    // If a specific share target was requested, only return that folder!
+    if (shareKey) {
+      safeFolders = safeFolders.filter(
+        (f) => String(f.id) === String(shareKey) || f.folder === shareKey || f.name === shareKey
+      );
+    }
+
+    return res.json({
+      success: true,
+      count: safeFolders.length,
+      data: safeFolders,
+    });
+  } catch (error: any) {
+    console.error("Lỗi lấy danh sách thư mục:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 2. Create New Folder
+app.post("/api/drive/folders", async (req: Request, res: Response) => {
+  try {
+    const { name, password, description, allowEdit, allowDownload } = req.body;
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ success: false, message: "Vui lòng nhập tên thư mục" });
+    }
+
+    const trimmedName = name.trim();
+    let folderId = slugifyFolderName(trimmedName);
+
+    const folders = await getStoredFolders();
+    // Ensure unique ID
+    let count = 1;
+    const baseId = folderId;
+    while (folders.some((f) => f.id === folderId)) {
+      folderId = `${baseId}-${count++}`;
+    }
+
+    const passwordHash = password && password.trim() ? bcryptjs.hashSync(password.trim(), 10) : undefined;
+    const shareToken = "share_" + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+
+    const newFolder: DriveFolderMeta = {
+      id: folderId,
+      name: trimmedName,
+      description: description?.trim() || "",
+      hasPassword: !!passwordHash,
+      passwordHash,
+      allowEdit: allowEdit !== false,
+      allowDownload: allowDownload !== false,
+      shareToken,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    folders.push(newFolder);
+    await saveStoredFolders(folders);
+
+    // Create local directory
+    const { localDirs, githubPath } = resolveFolderPaths(folderId);
+    try {
+      if (!fs.existsSync(localDirs[0])) {
+        fs.mkdirSync(localDirs[0], { recursive: true });
+      }
+    } catch (e) {}
+
+    // Commit .gitkeep to GitHub if token available
+    const token = getEffectiveGithubToken(req);
+    let githubCreated = false;
+    if (token) {
+      try {
+        const ghRes = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/.gitkeep`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "Content-Type": "application/json",
+              "User-Agent": "Drive-App",
+            },
+            body: JSON.stringify({
+              message: `Create folder ${trimmedName} via Drive`,
+              content: Buffer.from("").toString("base64"),
+              branch: GITHUB_BRANCH,
+            }),
+          }
+        );
+        if (ghRes.ok) githubCreated = true;
+      } catch (ghErr) {
+        console.warn("GitHub folder create warning:", ghErr);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Đã tạo thư mục "${trimmedName}" thành công!`,
+      data: {
+        id: newFolder.id,
+        name: newFolder.name,
+        description: newFolder.description,
+        hasPassword: !!newFolder.passwordHash,
+        allowEdit: newFolder.allowEdit,
+        allowDownload: newFolder.allowDownload,
+        shareToken: newFolder.shareToken,
+        createdAt: newFolder.createdAt,
+      },
+      githubCreated,
+    });
+  } catch (error: any) {
+    console.error("Lỗi tạo thư mục:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 3. Unlock Password-Protected Folder
+app.post("/api/drive/folders/unlock", async (req: Request, res: Response) => {
+  try {
+    const { folderId, password } = req.body;
+    if (!folderId || !password) {
+      return res.status(400).json({ success: false, message: "Vui lòng nhập mật khẩu" });
+    }
+
+    const folders = await getStoredFolders();
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy thư mục" });
+    }
+
+    if (!folder.passwordHash) {
+      return res.json({ success: true, unlocked: true });
+    }
+
+    const isValid = bcryptjs.compareSync(password, folder.passwordHash);
+    if (!isValid) {
+      return res.status(401).json({ success: false, message: "Mật khẩu không chính xác!" });
+    }
+
+    return res.json({
+      success: true,
+      unlocked: true,
+      message: "Mở khóa thư mục thành công!",
+      folder: {
+        id: folder.id,
+        name: folder.name,
+        allowEdit: folder.allowEdit,
+        allowDownload: folder.allowDownload,
+      },
+    });
+  } catch (error: any) {
+    console.error("Lỗi mở khóa thư mục:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 4. Update Folder (Name, Password, Permissions)
+app.put("/api/drive/folders/:id", async (req: Request, res: Response) => {
+  try {
+    const folderId = req.params.id;
+    const { name, password, removePassword, description, allowEdit, allowDownload } = req.body;
+
+    const folders = await getStoredFolders();
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy thư mục" });
+    }
+
+    if (name && typeof name === "string" && name.trim()) {
+      folder.name = name.trim();
+    }
+    if (description !== undefined) {
+      folder.description = String(description).trim();
+    }
+    if (allowEdit !== undefined) {
+      folder.allowEdit = !!allowEdit;
+    }
+    if (allowDownload !== undefined) {
+      folder.allowDownload = !!allowDownload;
+    }
+
+    if (removePassword) {
+      folder.passwordHash = undefined;
+      folder.hasPassword = false;
+    } else if (password && password.trim()) {
+      folder.passwordHash = bcryptjs.hashSync(password.trim(), 10);
+      folder.hasPassword = true;
+    }
+
+    folder.updatedAt = new Date().toISOString();
+    await saveStoredFolders(folders);
+
+    return res.json({
+      success: true,
+      message: "Cập nhật thông tin thư mục thành công!",
+      data: {
+        id: folder.id,
+        name: folder.name,
+        description: folder.description,
+        hasPassword: !!folder.passwordHash,
+        allowEdit: folder.allowEdit,
+        allowDownload: folder.allowDownload,
+        shareToken: folder.shareToken,
+      },
+    });
+  } catch (error: any) {
+    console.error("Lỗi cập nhật thư mục:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 5. Delete Folder
+app.delete("/api/drive/folders/:id", async (req: Request, res: Response) => {
+  try {
+    const folderId = req.params.id;
+    if (folderId === "fme-ctut") {
+      return res.status(400).json({ success: false, message: "Không thể xóa thư mục gốc FME - CTUT" });
+    }
+
+    let folders = await getStoredFolders();
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy thư mục" });
+    }
+
+    folders = folders.filter((f) => f.id !== folderId);
+    await saveStoredFolders(folders);
+
+    // Delete local directory
+    const { localDirs } = resolveFolderPaths(folderId);
+    for (const d of localDirs) {
+      if (fs.existsSync(d)) {
+        try {
+          fs.rmSync(d, { recursive: true, force: true });
+        } catch (e) {}
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Đã xóa thư mục "${folder.name}" thành công!`,
+    });
+  } catch (error: any) {
+    console.error("Lỗi xóa thư mục:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 6. Get Files in a Folder
+app.get("/api/drive/files", async (req: Request, res: Response) => {
+  try {
+    const folderKey = (req.query.folder as string) || "1";
+    const { folderName, localDirs } = await resolveFolderDirs(folderKey);
+
+    const fileMap = new Map<string, any>();
+    let totalBytes = 0;
+
+    for (const dir of localDirs) {
+      if (fs.existsSync(dir)) {
+        try {
+          const localFiles = fs.readdirSync(dir);
+          for (const file of localFiles) {
+            if (
+              file === ".gitkeep" ||
+              file.toLowerCase() === "index.html" ||
+              file.toLowerCase() === "manifest.json" ||
+              file.toLowerCase() === "folders.json" ||
+              file.startsWith(".")
+            ) {
+              continue;
+            }
+            const ext = path.extname(file).toLowerCase();
+            if (!DRIVE_IMAGE_EXTS.has(ext)) continue;
+
+            if (!fileMap.has(file)) {
+              const filePath = path.join(dir, file);
+              const stat = fs.statSync(filePath);
+              if (stat.isFile()) {
+                totalBytes += stat.size;
+                const relFromPublic = path.relative(path.join(process.cwd(), "public"), filePath).replace(/\\/g, "/");
+                const url = (relFromPublic && !relFromPublic.startsWith(".."))
+                  ? `/${relFromPublic}`
+                  : `/api/drive/download?folder=${encodeURIComponent(folderKey)}&file=${encodeURIComponent(file)}`;
+
+                fileMap.set(file, {
+                  name: file,
+                  size: stat.size,
+                  sizeFormatted: formatBytes(stat.size),
+                  mtime: stat.mtime.toISOString(),
+                  ext: ext.replace(".", "").toUpperCase(),
+                  url: url,
+                  downloadUrl: `/api/drive/download?folder=${encodeURIComponent(folderKey)}&file=${encodeURIComponent(file)}`,
+                  isGithub: false,
+                });
+              }
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    let images = Array.from(fileMap.values());
+    const requestedFile = (req.query.file as string)?.trim();
+    if (requestedFile) {
+      images = images.filter(
+        (img) =>
+          img.name.toLowerCase() === requestedFile.toLowerCase() ||
+          encodeURIComponent(img.name).toLowerCase() === requestedFile.toLowerCase()
+      );
+      // Recalculate totalBytes for the requested file
+      totalBytes = images.reduce((acc, cur) => acc + (cur.size || 0), 0);
+    }
+
+    images.sort((a, b) => new Date(b.mtime).getTime() - new Date(a.mtime).getTime());
+
+    return res.json({
+      success: true,
+      folderId: folderKey,
+      folderName,
+      count: images.length,
+      totalBytes,
+      totalSizeFormatted: formatBytes(totalBytes),
+      data: images,
+    });
+  } catch (error: any) {
+    console.error("Lỗi lấy tệp:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 7. Download File
+app.get("/api/drive/download", async (req: Request, res: Response) => {
+  try {
+    const filename = req.query.file as string;
+    const folderKey = (req.query.folder as string) || "1";
+    if (!filename || typeof filename !== "string") {
+      return res.status(400).send("Thiếu tham số file");
+    }
+
+    const safeName = path.basename(filename);
+    const { localDirs } = await resolveFolderDirs(folderKey);
+
+    for (const dir of localDirs) {
+      const targetPath = path.join(dir, safeName);
+      if (fs.existsSync(targetPath)) {
+        return res.download(targetPath, safeName);
+      }
+    }
+
+    // Direct check public and dist
+    const directPaths = [
+      path.join(process.cwd(), "public", "fme-ctut", safeName),
+      path.join(process.cwd(), "public", "drive", safeName),
+      path.join(process.cwd(), "dist", "fme-ctut", safeName),
+      path.join(process.cwd(), "dist", "drive", safeName),
+    ];
+    for (const p of directPaths) {
+      if (fs.existsSync(p)) {
+        return res.download(p, safeName);
+      }
+    }
+
+    return res.status(404).send("Không tìm thấy tệp ảnh");
+  } catch (error: any) {
+    console.error("Lỗi tải tệp:", error);
+    return res.status(500).send("Lỗi tải tệp: " + error.message);
+  }
+});
+
+// 8. Upload File to Folder
+app.post("/api/drive/upload", async (req: Request, res: Response) => {
+  try {
+    const { folder, filename, base64 } = req.body;
+    const folderId = folder || "fme-ctut";
+    if (!filename || !base64) {
+      return res.status(400).json({ success: false, message: "Thiếu dữ liệu tệp hoặc tên tệp" });
+    }
+
+    const safeName = path.basename(filename);
+    const ext = path.extname(safeName).toLowerCase();
+    if (!DRIVE_IMAGE_EXTS.has(ext)) {
+      return res.status(400).json({ success: false, message: "Định dạng tệp không được hỗ trợ" });
+    }
+
+    const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, "");
+    const token = getEffectiveGithubToken(req);
+    const { githubPath, localDirs } = resolveFolderPaths(folderId);
+
+    let githubCommitted = false;
+    let githubCommitUrl = "";
+
+    // Commit to GitHub if token available
+    if (token) {
+      let sha: string | undefined = undefined;
+      try {
+        const checkRes = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}?ref=${GITHUB_BRANCH}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "User-Agent": "Drive-App",
+            },
+          }
+        );
+        if (checkRes.ok) {
+          const existing = await checkRes.json();
+          sha = existing.sha;
+        }
+      } catch (e) {}
+
+      const ghPutRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+            "User-Agent": "Drive-App",
+          },
+          body: JSON.stringify({
+            message: `Upload ${safeName} to ${folderId} via Drive`,
+            content: cleanBase64,
+            branch: GITHUB_BRANCH,
+            ...(sha ? { sha } : {}),
+          }),
+        }
+      );
+
+      if (ghPutRes.ok) {
+        const ghData = await ghPutRes.json();
+        githubCommitted = true;
+        githubCommitUrl = ghData.commit?.html_url || "";
+      } else {
+        const errJson = await ghPutRes.json().catch(() => ({}));
+        return res.status(ghPutRes.status).json({
+          success: false,
+          message: "Lỗi GitHub: " + (errJson.message || "Không thể commit lên repo"),
+        });
+      }
+    }
+
+    // Write locally
+    const buffer = Buffer.from(cleanBase64, "base64");
+    try {
+      for (const d of localDirs) {
+        if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+        fs.writeFileSync(path.join(d, safeName), buffer);
+      }
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: githubCommitted
+        ? `Đã commit thành công lên GitHub (${GITHUB_OWNER}/${GITHUB_REPO})!`
+        : "Đã tải lên máy chủ thành công.",
+      githubCommitted,
+      githubCommitUrl,
+      file: {
+        name: safeName,
+        size: buffer.length,
+        sizeFormatted: formatBytes(buffer.length),
+        ext: ext.replace(".", "").toUpperCase(),
+        url: `/${githubPath.replace(/^public\//, "")}/${encodeURIComponent(safeName)}`,
+        downloadUrl: `/api/drive/download?folder=${encodeURIComponent(folderId)}&file=${encodeURIComponent(safeName)}`,
+      },
+    });
+  } catch (error: any) {
+    console.error("Lỗi upload tệp:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 9. Delete File from Folder
+app.delete("/api/drive/delete", async (req: Request, res: Response) => {
+  try {
+    const filename = (req.body?.filename || req.query?.file) as string;
+    const folderId = (req.body?.folder || req.query?.folder || "fme-ctut") as string;
+    const providedSha = req.body?.sha as string | undefined;
+
+    if (!filename || typeof filename !== "string") {
+      return res.status(400).json({ success: false, message: "Thiếu tên tệp cần xóa" });
+    }
+
+    const safeName = path.basename(filename);
+    const token = getEffectiveGithubToken(req);
+    const { githubPath, localDirs } = resolveFolderPaths(folderId);
+
+    let githubDeleted = false;
+
+    if (token) {
+      let sha = providedSha;
+      if (!sha) {
+        const checkRes = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}?ref=${GITHUB_BRANCH}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "User-Agent": "Drive-App",
+            },
+          }
+        );
+        if (checkRes.ok) {
+          const item = await checkRes.json();
+          sha = item.sha;
+        }
+      }
+
+      if (sha) {
+        const ghDelRes = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "Content-Type": "application/json",
+              "User-Agent": "Drive-App",
+            },
+            body: JSON.stringify({
+              message: `Delete ${safeName} from ${folderId} via Drive`,
+              sha,
+              branch: GITHUB_BRANCH,
+            }),
+          }
+        );
+
+        if (ghDelRes.ok) {
+          githubDeleted = true;
+        }
+      }
+    }
+
+    for (const d of localDirs) {
+      const p = path.join(d, safeName);
+      if (fs.existsSync(p)) {
+        try {
+          fs.unlinkSync(p);
+        } catch (e) {}
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: githubDeleted ? `Đã tạo commit xóa tệp ${safeName} trên GitHub!` : `Đã xóa tệp ${safeName}.`,
+      githubDeleted,
+    });
+  } catch (error: any) {
+    console.error("Lỗi xóa tệp:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Backward compatibility alias for /api/fme-ctut
+app.get("/api/fme-ctut", (req: Request, res: Response) => {
+  req.url = "/api/drive/files?folder=fme-ctut";
+  app._router.handle(req, res);
+});
+app.get("/api/fme-ctut/download", (req: Request, res: Response) => {
+  req.url = `/api/drive/download?folder=fme-ctut&file=${encodeURIComponent((req.query.file as string) || "")}`;
+  app._router.handle(req, res);
+});
+app.post("/api/fme-ctut/upload", (req: Request, res: Response) => {
+  req.body.folder = "fme-ctut";
+  req.url = "/api/drive/upload";
+  app._router.handle(req, res);
+});
+app.delete("/api/fme-ctut/delete", (req: Request, res: Response) => {
+  req.body.folder = "fme-ctut";
+  req.url = "/api/drive/delete";
+  app._router.handle(req, res);
+});
+
+// Static routing for /drive, /fme-ctut, and assets
+app.use("/drive", express.static(path.join(process.cwd(), "public", "drive")));
+app.use("/fme-ctut", express.static(path.join(process.cwd(), "public", "fme-ctut")));
+
+// Direct HTML handlers for /drive and /fme-ctut (no index.html required in URL)
+app.get(["/drive", "/drive/*"], (req: Request, res: Response, next: NextFunction) => {
+  if (req.path.includes(".") && !req.path.endsWith(".html")) {
+    return next();
+  }
+  const driveHtml = path.join(process.cwd(), "public", "drive", "index.html");
+  if (fs.existsSync(driveHtml)) {
+    return res.sendFile(driveHtml);
+  }
+  const distDriveHtml = path.join(process.cwd(), "dist", "drive", "index.html");
+  if (fs.existsSync(distDriveHtml)) {
+    return res.sendFile(distDriveHtml);
+  }
+  next();
+});
+
+app.get(["/fme-ctut", "/fme-ctut/*"], (req: Request, res: Response, next: NextFunction) => {
+  if (req.path.includes(".") && !req.path.endsWith(".html")) {
+    return next();
+  }
+  const fmeHtml = path.join(process.cwd(), "public", "fme-ctut", "index.html");
+  if (fs.existsSync(fmeHtml)) {
+    return res.sendFile(fmeHtml);
+  }
+  next();
+});
+
+// ==========================================
+// VITE OR STATIC FILE SERVING
+// ==========================================
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -1208,7 +2040,18 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa",
     });
-    app.use(vite.middlewares);
+    app.use((req, res, next) => {
+      if (
+        req.path === "/drive" ||
+        req.path.startsWith("/drive/") ||
+        req.path.startsWith("/api") ||
+        req.path === "/fme-ctut" ||
+        req.path.startsWith("/fme-ctut/")
+      ) {
+        return next();
+      }
+      vite.middlewares(req, res, next);
+    });
     console.log("🚀 Running in Development mode with Vite middleware.");
   } else {
     // Production Mode

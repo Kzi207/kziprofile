@@ -6,6 +6,22 @@
       "destination": "/api/index.ts"
     },
     {
+      "source": "/drive",
+      "destination": "/drive/index.html"
+    },
+    {
+      "source": "/drive/(.*)",
+      "destination": "/drive/$1"
+    },
+    {
+      "source": "/fme-ctut",
+      "destination": "/drive/index.html"
+    },
+    {
+      "source": "/fme-ctut/(.*)",
+      "destination": "/fme-ctut/$1"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
