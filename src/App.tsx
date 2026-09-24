@@ -13,6 +13,7 @@ import Contact from "./components/Contact";
 import Footer from "./components/Footer";
 import AdminDashboard from "./components/AdminDashboard";
 import PhotosManager from "./components/PhotosManager";
+import DriveApp from "./components/DriveApp";
 import { UserProfile, Skill, Project, Roadmap, Experience, Certificate, SiteSettings } from "./types";
 
 export default function App() {
@@ -209,6 +210,11 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  const isDriveRoute = window.location.pathname === "/drive" || window.location.pathname.startsWith("/drive/");
+  if (isDriveRoute) {
+    return <DriveApp />;
   }
 
   const isUploadRoute = window.location.pathname === "/upload";

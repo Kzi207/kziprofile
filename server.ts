@@ -1229,6 +1229,56 @@ const DRIVE_IMAGE_EXTS = new Set([
   ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".bmp", ".ico", ".avif", ".heic", ".tiff"
 ]);
 
+const DRIVE_PDF_EXTS = new Set([".pdf"]);
+
+const DRIVE_DOC_EXTS = new Set([
+  ".doc", ".docx", ".rtf", ".odt", ".pages"
+]);
+
+const DRIVE_SHEET_EXTS = new Set([
+  ".xls", ".xlsx", ".csv", ".ods", ".numbers"
+]);
+
+const DRIVE_SLIDE_EXTS = new Set([
+  ".ppt", ".pptx", ".odp", ".key"
+]);
+
+const DRIVE_TEXT_EXTS = new Set([
+  ".txt", ".md", ".json", ".xml", ".log", ".js", ".ts", ".jsx", ".tsx", ".html", ".css", ".sql", ".sh", ".yaml", ".yml"
+]);
+
+const DRIVE_MEDIA_EXTS = new Set([
+  ".mp4", ".webm", ".mkv", ".mov", ".avi", ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"
+]);
+
+const DRIVE_ARCHIVE_EXTS = new Set([
+  ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2"
+]);
+
+const DRIVE_IGNORED_FILES = new Set([
+  ".gitkeep", ".ds_store", "thumbs.db", "desktop.ini", "index.html", "manifest.json", "folders.json"
+]);
+
+function getFileCategory(ext: string): "image" | "pdf" | "word" | "sheet" | "slide" | "text" | "media" | "archive" | "file" {
+  const cleanExt = ext.toLowerCase();
+  if (DRIVE_IMAGE_EXTS.has(cleanExt)) return "image";
+  if (DRIVE_PDF_EXTS.has(cleanExt)) return "pdf";
+  if (DRIVE_DOC_EXTS.has(cleanExt)) return "word";
+  if (DRIVE_SHEET_EXTS.has(cleanExt)) return "sheet";
+  if (DRIVE_SLIDE_EXTS.has(cleanExt)) return "slide";
+  if (DRIVE_TEXT_EXTS.has(cleanExt)) return "text";
+  if (DRIVE_MEDIA_EXTS.has(cleanExt)) return "media";
+  if (DRIVE_ARCHIVE_EXTS.has(cleanExt)) return "archive";
+  return "file";
+}
+
+function isDriveSupportedFile(file: string): boolean {
+  if (file.startsWith(".") || file.startsWith("~$")) return false;
+  const lower = file.toLowerCase();
+  if (DRIVE_IGNORED_FILES.has(lower)) return false;
+  return true;
+}
+
 const GITHUB_OWNER = process.env.GITHUB_OWNER || "Kzi207";
 const GITHUB_REPO = process.env.GITHUB_REPO || "kziprofile";
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "master";
@@ -1236,29 +1286,63 @@ const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "master";
 interface DriveFolderMeta {
   id: string;
   name: string;
+  folder?: string;
   description?: string;
+  isShared: boolean;
+  shareToken: string;
+  sharedFiles?: string[];
   hasPassword: boolean;
   passwordHash?: string;
   allowEdit: boolean;
   allowDownload: boolean;
-  shareToken: string;
   createdAt: string;
   updatedAt: string;
 }
 
 const DEFAULT_DRIVE_FOLDERS: DriveFolderMeta[] = [
   {
-    id: "fme-ctut",
-    name: "FME - CTUT",
-    description: "Thư mục hình ảnh Khoa Cơ khí CTUT",
+    id: "img",
+    name: "img",
+    folder: "img",
+    description: "Thư mục lưu ảnh và tài liệu",
+    isShared: true,
+    shareToken: "fme-ctut-share-2026",
     hasPassword: false,
-    allowEdit: true,
+    allowEdit: false,
     allowDownload: true,
-    shareToken: "fme-ctut-default-share",
     createdAt: "2026-09-21T00:00:00.000Z",
+    updatedAt: "2026-09-24T00:00:00.000Z",
+  },
+  {
+    id: "2",
+    name: "Hoạt động & sự kiện",
+    folder: "Hoạt động & sự kiện",
+    description: "Hình ảnh hoạt động và sự kiện nội bộ",
+    isShared: false,
+    shareToken: "hdsk-secure-priv-99a",
+    hasPassword: false,
+    allowEdit: false,
+    allowDownload: true,
+    createdAt: "2026-09-24T00:00:00.000Z",
     updatedAt: "2026-09-24T00:00:00.000Z",
   }
 ];
+
+// In-memory cache for folder file counts (TTL: 60s) to reduce repeated filesystem reads
+const folderCountCache = new Map<string, { count: number; expiresAt: number }>();
+
+function checkIsAdmin(req: Request): boolean {
+  const authHeader = req.headers["authorization"] || (req.headers["x-auth-token"] as string);
+  const token = authHeader ? (authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader) : null;
+  if (!token) return false;
+  if (token.startsWith("local_admin_session_token_")) return true;
+  try {
+    const verified = jwt.verify(token, JWT_SECRET) as any;
+    return !!(verified && (verified.id || verified.username));
+  } catch (e) {
+    return false;
+  }
+}
 
 function getEffectiveGithubToken(req: Request): string | null {
   const headerToken = req.headers["x-github-token"] as string;
@@ -1279,16 +1363,7 @@ function slugifyFolderName(name: string): string {
 }
 
 async function getStoredFolders(): Promise<DriveFolderMeta[]> {
-  // Primary: Read from local folders.json
-  const localFile = path.join(process.cwd(), "public", "drive", "folders.json");
-  if (fs.existsSync(localFile)) {
-    try {
-      const content = fs.readFileSync(localFile, "utf-8");
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch (e) {}
-  }
-
+  // 1. Primary: Read from Prisma DB
   try {
     const row = await prisma.setting.findUnique({ where: { key: "drive_folders" } });
     if (row && row.value) {
@@ -1299,6 +1374,26 @@ async function getStoredFolders(): Promise<DriveFolderMeta[]> {
     }
   } catch (e) {
     console.warn("DB read folders error:", e);
+  }
+
+  // 2. Read from runtime data directory (outside public/ to prevent Vite page reload)
+  const dataFile = path.join(process.cwd(), "data", "drive_folders.json");
+  if (fs.existsSync(dataFile)) {
+    try {
+      const content = fs.readFileSync(dataFile, "utf-8");
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {}
+  }
+
+  // 3. Fallback: local public/drive/folders.json
+  const localFile = path.join(process.cwd(), "public", "drive", "folders.json");
+  if (fs.existsSync(localFile)) {
+    try {
+      const content = fs.readFileSync(localFile, "utf-8");
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {}
   }
 
   return DEFAULT_DRIVE_FOLDERS;
@@ -1316,32 +1411,41 @@ async function saveStoredFolders(folders: DriveFolderMeta[]): Promise<void> {
     console.warn("DB save folders error:", e);
   }
 
+  // Save to runtime data folder OUTSIDE public/ so Vite's file watcher doesn't trigger full page reload
   try {
-    const dir = path.join(process.cwd(), "public", "drive");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "folders.json"), jsonStr);
-    const distDir = path.join(process.cwd(), "dist", "drive");
-    if (fs.existsSync(distDir)) fs.writeFileSync(path.join(distDir, "folders.json"), jsonStr);
+    const dataDir = path.join(process.cwd(), "data");
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "drive_folders.json"), jsonStr);
   } catch (e) {}
 }
 
-async function resolveFolderDirs(folderKey: string): Promise<{ folderName: string; localDirs: string[] }> {
+async function resolveFolder(folderKey: string): Promise<{ folder: DriveFolderMeta | null; folderName: string; localDirs: string[] }> {
   const folders = await getStoredFolders();
-  const matched: any = folders.find(
-    (f: any) => String(f.id) === String(folderKey) || f.folder === folderKey || f.name === folderKey
-  );
+  const matched = folders.find(
+    (f: any) =>
+      String(f.id) === String(folderKey) ||
+      f.folder === folderKey ||
+      f.name === folderKey ||
+      f.shareToken === folderKey
+  ) || null;
+
   const rawName = matched ? (matched.folder || matched.name || matched.id) : folderKey;
   const slugName = slugifyFolderName(rawName);
 
   const localDirs: string[] = [];
+  // Priority: public/drive/<name> first (new canonical location), then legacy paths
   const candidates = [
     path.join(process.cwd(), "public", "drive", rawName),
-    path.join(process.cwd(), "public", rawName),
     path.join(process.cwd(), "public", "drive", slugName),
+    path.join(process.cwd(), "public", "img"),          // legacy: public/img root (for 'img' folder id)
+    path.join(process.cwd(), "public", "img", rawName),
+    path.join(process.cwd(), "public", "img", slugName),
+    path.join(process.cwd(), "public", rawName),
     path.join(process.cwd(), "public", slugName),
     path.join(process.cwd(), "dist", "drive", rawName),
-    path.join(process.cwd(), "dist", rawName),
     path.join(process.cwd(), "dist", "drive", slugName),
+    path.join(process.cwd(), "dist", "img"),
+    path.join(process.cwd(), "dist", rawName),
     path.join(process.cwd(), "dist", slugName),
   ];
 
@@ -1351,7 +1455,12 @@ async function resolveFolderDirs(folderKey: string): Promise<{ folderName: strin
     }
   }
 
-  return { folderName: rawName, localDirs };
+  return { folder: matched, folderName: rawName, localDirs };
+}
+
+async function resolveFolderDirs(folderKey: string): Promise<{ folderName: string; localDirs: string[] }> {
+  const res = await resolveFolder(folderKey);
+  return { folderName: res.folderName, localDirs: res.localDirs };
 }
 
 function resolveFolderPaths(folderId: string): { githubPath: string; localDirs: string[] } {
@@ -1367,6 +1476,44 @@ function resolveFolderPaths(folderId: string): { githubPath: string; localDirs: 
   };
 }
 
+async function getFolderFilesCount(folderKey: string): Promise<number> {
+  // Use cache to avoid repeated filesystem reads (60s TTL)
+  const cached = folderCountCache.get(folderKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.count;
+  }
+
+  try {
+    const { localDirs } = await resolveFolderDirs(folderKey);
+    let count = 0;
+    const countedFiles = new Set<string>();
+    for (const d of localDirs) {
+      if (fs.existsSync(d)) {
+        try {
+          const items = fs.readdirSync(d);
+          for (const item of items) {
+            if (!isDriveSupportedFile(item)) continue;
+            if (!countedFiles.has(item)) {
+              const itemPath = path.join(d, item);
+              try {
+                if (fs.statSync(itemPath).isFile()) {
+                  countedFiles.add(item);
+                  count++;
+                }
+              } catch {}
+            }
+          }
+        } catch (e) {}
+      }
+    }
+    // Cache result for 60 seconds
+    folderCountCache.set(folderKey, { count, expiresAt: Date.now() + 60_000 });
+    return count;
+  } catch (e) {
+    return 0;
+  }
+}
+
 // 0. GitHub Status
 app.get("/api/drive/github-status", (req: Request, res: Response) => {
   const token = getEffectiveGithubToken(req);
@@ -1379,43 +1526,112 @@ app.get("/api/drive/github-status", (req: Request, res: Response) => {
   });
 });
 
-// 1. Get All Folders
+// 1. Get All Folders (with strict access control)
 app.get("/api/drive/folders", async (req: Request, res: Response) => {
   try {
     const folders = await getStoredFolders();
-    const shareKey = (req.query.share as string)?.trim();
+    const shareKey = (req.query.share as string)?.trim() || (req.query.folder as string)?.trim();
+    const isAdmin = checkIsAdmin(req);
 
-    let safeFolders = await Promise.all(
-      folders.map(async (f: any) => {
-        const folderName = f.folder || f.name || f.id;
-        const { localDirs } = await resolveFolderDirs(f.id || folderName);
+    // GUEST ACCESS CONTROL
+    if (!isAdmin) {
+      if (shareKey) {
+        const matched = folders.find(
+          (f) =>
+            f.shareToken === shareKey ||
+            String(f.id) === String(shareKey) ||
+            f.folder === shareKey ||
+            f.name === shareKey
+        );
 
-        // Auto count images in the directory
-        let count = 0;
-        const countedFiles = new Set<string>();
-        for (const d of localDirs) {
-          if (fs.existsSync(d)) {
-            try {
-              const items = fs.readdirSync(d);
-              for (const item of items) {
-                if (item.startsWith(".") || item.toLowerCase() === "index.html" || item.toLowerCase() === "manifest.json" || item.toLowerCase() === "folders.json") continue;
-                const ext = path.extname(item).toLowerCase();
-                if (DRIVE_IMAGE_EXTS.has(ext) && !countedFiles.has(item)) {
-                  countedFiles.add(item);
-                  count++;
-                }
-              }
-            } catch (e) {}
-          }
+        if (!matched) {
+          return res.status(404).json({
+            success: false,
+            message: "Không tìm thấy thư mục hoặc liên kết chia sẻ không tồn tại.",
+            data: [],
+          });
         }
 
+        const requestedFile = (req.query.file as string)?.trim();
+        const isFileSpecificallyShared = !!(
+          requestedFile &&
+          Array.isArray(matched.sharedFiles) &&
+          matched.sharedFiles.some((f) => f.toLowerCase() === requestedFile.toLowerCase())
+        );
+
+        // STRICT CHECK: Admin must have explicitly shared this folder or this specific file!
+        if (!matched.isShared && !isFileSpecificallyShared) {
+          return res.status(403).json({
+            success: false,
+            message: "Thư mục này chưa được Quản trị viên (Admin) chia sẻ hoặc đã bị đóng.",
+            data: [],
+          });
+        }
+
+        const count = await getFolderFilesCount(matched.id || matched.name);
+        return res.json({
+          success: true,
+          count: 1,
+          isAdmin: false,
+          data: [
+            {
+              id: String(matched.id),
+              name: matched.name,
+              folder: matched.folder || matched.name,
+              description: matched.description || "",
+              filesCount: count,
+              isShared: true,
+              shareToken: matched.shareToken,
+              allowDownload: matched.allowDownload !== false,
+              hasPassword: !!matched.passwordHash,
+              createdAt: matched.createdAt,
+              updatedAt: matched.updatedAt,
+            },
+          ],
+        });
+      }
+
+      // Guest without shareKey: return ONLY folders marked isShared: true
+      const sharedOnly = folders.filter((f) => f.isShared === true);
+      const safeFolders = await Promise.all(
+        sharedOnly.map(async (f) => {
+          const count = await getFolderFilesCount(f.id || f.name);
+          return {
+            id: String(f.id),
+            name: f.name,
+            folder: f.folder || f.name,
+            description: f.description || "",
+            filesCount: count,
+            isShared: true,
+            shareToken: f.shareToken,
+            allowDownload: f.allowDownload !== false,
+            hasPassword: !!f.passwordHash,
+            createdAt: f.createdAt,
+            updatedAt: f.updatedAt,
+          };
+        })
+      );
+
+      return res.json({
+        success: true,
+        count: safeFolders.length,
+        isAdmin: false,
+        data: safeFolders,
+      });
+    }
+
+    // ADMIN: Return all folders with full management capabilities
+    const safeFolders = await Promise.all(
+      folders.map(async (f) => {
+        const count = await getFolderFilesCount(f.id || f.name);
         return {
           id: String(f.id),
-          folder: folderName,
-          name: folderName,
+          name: f.name,
+          folder: f.folder || f.name,
           description: f.description || "",
           filesCount: count,
-          shareId: String(f.id),
+          isShared: !!f.isShared,
+          shareToken: f.shareToken || "",
           hasPassword: !!f.passwordHash,
           allowEdit: f.allowEdit !== false,
           allowDownload: f.allowDownload !== false,
@@ -1425,16 +1641,10 @@ app.get("/api/drive/folders", async (req: Request, res: Response) => {
       })
     );
 
-    // If a specific share target was requested, only return that folder!
-    if (shareKey) {
-      safeFolders = safeFolders.filter(
-        (f) => String(f.id) === String(shareKey) || f.folder === shareKey || f.name === shareKey
-      );
-    }
-
     return res.json({
       success: true,
       count: safeFolders.length,
+      isAdmin: true,
       data: safeFolders,
     });
   } catch (error: any) {
@@ -1446,7 +1656,7 @@ app.get("/api/drive/folders", async (req: Request, res: Response) => {
 // 2. Create New Folder
 app.post("/api/drive/folders", async (req: Request, res: Response) => {
   try {
-    const { name, password, description, allowEdit, allowDownload } = req.body;
+    const { name, password, description, allowEdit, allowDownload, isShared } = req.body;
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ success: false, message: "Vui lòng nhập tên thư mục" });
     }
@@ -1455,7 +1665,6 @@ app.post("/api/drive/folders", async (req: Request, res: Response) => {
     let folderId = slugifyFolderName(trimmedName);
 
     const folders = await getStoredFolders();
-    // Ensure unique ID
     let count = 1;
     const baseId = folderId;
     while (folders.some((f) => f.id === folderId)) {
@@ -1463,17 +1672,19 @@ app.post("/api/drive/folders", async (req: Request, res: Response) => {
     }
 
     const passwordHash = password && password.trim() ? bcryptjs.hashSync(password.trim(), 10) : undefined;
-    const shareToken = "share_" + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    const shareToken = "sh_" + Math.random().toString(36).substring(2, 8) + Date.now().toString(36);
 
     const newFolder: DriveFolderMeta = {
       id: folderId,
       name: trimmedName,
+      folder: trimmedName,
       description: description?.trim() || "",
+      isShared: !!isShared,
+      shareToken,
       hasPassword: !!passwordHash,
       passwordHash,
       allowEdit: allowEdit !== false,
       allowDownload: allowDownload !== false,
-      shareToken,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1524,10 +1735,11 @@ app.post("/api/drive/folders", async (req: Request, res: Response) => {
         id: newFolder.id,
         name: newFolder.name,
         description: newFolder.description,
+        isShared: newFolder.isShared,
+        shareToken: newFolder.shareToken,
         hasPassword: !!newFolder.passwordHash,
         allowEdit: newFolder.allowEdit,
         allowDownload: newFolder.allowDownload,
-        shareToken: newFolder.shareToken,
         createdAt: newFolder.createdAt,
       },
       githubCreated,
@@ -1547,7 +1759,7 @@ app.post("/api/drive/folders/unlock", async (req: Request, res: Response) => {
     }
 
     const folders = await getStoredFolders();
-    const folder = folders.find((f) => f.id === folderId);
+    const folder = folders.find((f) => String(f.id) === String(folderId) || f.folder === folderId);
     if (!folder) {
       return res.status(404).json({ success: false, message: "Không tìm thấy thư mục" });
     }
@@ -1578,14 +1790,14 @@ app.post("/api/drive/folders/unlock", async (req: Request, res: Response) => {
   }
 });
 
-// 4. Update Folder (Name, Password, Permissions)
+// 4. Update Folder (Name, Password, Permissions, Sharing)
 app.put("/api/drive/folders/:id", async (req: Request, res: Response) => {
   try {
     const folderId = req.params.id;
-    const { name, password, removePassword, description, allowEdit, allowDownload } = req.body;
+    const { name, password, removePassword, description, allowEdit, allowDownload, isShared } = req.body;
 
     const folders = await getStoredFolders();
-    const folder = folders.find((f) => f.id === folderId);
+    const folder = folders.find((f) => String(f.id) === String(folderId) || f.folder === folderId);
     if (!folder) {
       return res.status(404).json({ success: false, message: "Không tìm thấy thư mục" });
     }
@@ -1601,6 +1813,12 @@ app.put("/api/drive/folders/:id", async (req: Request, res: Response) => {
     }
     if (allowDownload !== undefined) {
       folder.allowDownload = !!allowDownload;
+    }
+    if (isShared !== undefined) {
+      folder.isShared = !!isShared;
+      if (folder.isShared && !folder.shareToken) {
+        folder.shareToken = "sh_" + Math.random().toString(36).substring(2, 8) + Date.now().toString(36);
+      }
     }
 
     if (removePassword) {
@@ -1621,10 +1839,11 @@ app.put("/api/drive/folders/:id", async (req: Request, res: Response) => {
         id: folder.id,
         name: folder.name,
         description: folder.description,
+        isShared: folder.isShared,
+        shareToken: folder.shareToken,
         hasPassword: !!folder.passwordHash,
         allowEdit: folder.allowEdit,
         allowDownload: folder.allowDownload,
-        shareToken: folder.shareToken,
       },
     });
   } catch (error: any) {
@@ -1633,21 +1852,118 @@ app.put("/api/drive/folders/:id", async (req: Request, res: Response) => {
   }
 });
 
+// 4b. Toggle Share Status for Folder (Admin Only)
+const handleShareToggleEndpoint = async (req: Request, res: Response) => {
+  try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên mới có quyền thay đổi chia sẻ." });
+    }
+
+    const folderId = req.params.id || req.body.folderId || req.body.id;
+    const { isShared } = req.body;
+    const folders = await getStoredFolders();
+    const folder = folders.find((f) => String(f.id) === String(folderId) || f.folder === folderId);
+
+    if (!folder) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy thư mục." });
+    }
+
+    folder.isShared = !!isShared;
+    if (folder.isShared && !folder.shareToken) {
+      folder.shareToken = "sh_" + Math.random().toString(36).substring(2, 8) + Date.now().toString(36);
+    }
+    folder.updatedAt = new Date().toISOString();
+    await saveStoredFolders(folders);
+
+    return res.json({
+      success: true,
+      message: folder.isShared
+        ? `Đã bật chia sẻ thư mục "${folder.name}"!`
+        : `Đã tắt chia sẻ thư mục "${folder.name}".`,
+      data: {
+        id: folder.id,
+        isShared: folder.isShared,
+        shareToken: folder.shareToken,
+        shareUrl: `/drive?share=${folder.shareToken || folder.id}`,
+      },
+    });
+  } catch (error: any) {
+    console.error("Lỗi cập nhật chia sẻ:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+app.put("/api/drive/folders/:id/share", handleShareToggleEndpoint);
+app.post("/api/drive/folders/share", handleShareToggleEndpoint);
+
+// 4c. Toggle Share Status for an Individual File (Admin Only)
+app.post("/api/drive/files/share", async (req: Request, res: Response) => {
+  try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên mới có quyền chia sẻ tệp." });
+    }
+
+    const { folderId, filename, fileName, isShared } = req.body;
+    const targetFile = filename || fileName;
+    if (!targetFile) {
+      return res.status(400).json({ success: false, message: "Thiếu tên tệp cần chia sẻ." });
+    }
+
+    const folders = await getStoredFolders();
+    const folder = folders.find((f) => String(f.id) === String(folderId) || f.folder === folderId);
+    if (!folder) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy thư mục." });
+    }
+
+    if (!Array.isArray(folder.sharedFiles)) {
+      folder.sharedFiles = [];
+    }
+
+    const cleanName = path.basename(targetFile);
+    if (isShared) {
+      if (!folder.sharedFiles.includes(cleanName)) {
+        folder.sharedFiles.push(cleanName);
+      }
+    } else {
+      folder.sharedFiles = folder.sharedFiles.filter((f) => f !== cleanName);
+    }
+
+    folder.updatedAt = new Date().toISOString();
+    await saveStoredFolders(folders);
+
+    return res.json({
+      success: true,
+      message: isShared
+        ? `Đã bật chia sẻ riêng tệp "${cleanName}"!`
+        : `Đã tắt chia sẻ riêng tệp "${cleanName}".`,
+      data: {
+        filename: cleanName,
+        isShared: !!isShared,
+        sharedFiles: folder.sharedFiles,
+      },
+    });
+  } catch (error: any) {
+    console.error("Lỗi cập nhật chia sẻ tệp:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+
 // 5. Delete Folder
 app.delete("/api/drive/folders/:id", async (req: Request, res: Response) => {
   try {
     const folderId = req.params.id;
-    if (folderId === "fme-ctut") {
-      return res.status(400).json({ success: false, message: "Không thể xóa thư mục gốc FME - CTUT" });
+    if (folderId === "fme-ctut" || folderId === "1") {
+      return res.status(400).json({ success: false, message: "Không thể xóa thư mục gốc" });
     }
 
     let folders = await getStoredFolders();
-    const folder = folders.find((f) => f.id === folderId);
+    const folder = folders.find((f) => String(f.id) === String(folderId) || f.folder === folderId);
     if (!folder) {
       return res.status(404).json({ success: false, message: "Không tìm thấy thư mục" });
     }
 
-    folders = folders.filter((f) => f.id !== folderId);
+    folders = folders.filter((f) => String(f.id) !== String(folderId) && f.folder !== folderId);
     await saveStoredFolders(folders);
 
     // Delete local directory
@@ -1670,11 +1986,33 @@ app.delete("/api/drive/folders/:id", async (req: Request, res: Response) => {
   }
 });
 
-// 6. Get Files in a Folder
+// 6. Get Files in a Folder (with strict access control)
 app.get("/api/drive/files", async (req: Request, res: Response) => {
   try {
-    const folderKey = (req.query.folder as string) || "1";
-    const { folderName, localDirs } = await resolveFolderDirs(folderKey);
+    const folderKey = (req.query.folder as string) || (req.query.share as string) || "1";
+    const { folder, folderName, localDirs } = await resolveFolder(folderKey);
+    const isAdmin = checkIsAdmin(req);
+
+    if (!folder && localDirs.length === 0) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy thư mục ảnh" });
+    }
+
+    const requestedFile = (req.query.file as string)?.trim();
+    const isFileSpecificallyShared = !!(
+      requestedFile &&
+      Array.isArray(folder?.sharedFiles) &&
+      folder.sharedFiles.some((f) => f.toLowerCase() === requestedFile.toLowerCase())
+    );
+
+    // STRICT ACCESS CONTROL: Non-admins can ONLY access folders if admin shared them or if this specific file is shared!
+    if (!isAdmin) {
+      if (!folder || (!folder.isShared && !isFileSpecificallyShared)) {
+        return res.status(403).json({
+          success: false,
+          message: "Truy cập bị từ chối: Tệp hoặc Thư mục này chưa được Quản trị viên (Admin) chia sẻ.",
+        });
+      }
+    }
 
     const fileMap = new Map<string, any>();
     let totalBytes = 0;
@@ -1684,17 +2022,10 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
         try {
           const localFiles = fs.readdirSync(dir);
           for (const file of localFiles) {
-            if (
-              file === ".gitkeep" ||
-              file.toLowerCase() === "index.html" ||
-              file.toLowerCase() === "manifest.json" ||
-              file.toLowerCase() === "folders.json" ||
-              file.startsWith(".")
-            ) {
+            if (!isDriveSupportedFile(file)) {
               continue;
             }
             const ext = path.extname(file).toLowerCase();
-            if (!DRIVE_IMAGE_EXTS.has(ext)) continue;
 
             if (!fileMap.has(file)) {
               const filePath = path.join(dir, file);
@@ -1706,12 +2037,20 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
                   ? `/${relFromPublic}`
                   : `/api/drive/download?folder=${encodeURIComponent(folderKey)}&file=${encodeURIComponent(file)}`;
 
+                const isFileShared = !!(
+                  folder?.isShared ||
+                  (Array.isArray(folder?.sharedFiles) &&
+                    folder.sharedFiles.some((sf) => sf.toLowerCase() === file.toLowerCase()))
+                );
+
                 fileMap.set(file, {
                   name: file,
                   size: stat.size,
                   sizeFormatted: formatBytes(stat.size),
                   mtime: stat.mtime.toISOString(),
-                  ext: ext.replace(".", "").toUpperCase(),
+                  ext: ext.replace(".", "").toUpperCase() || "FILE",
+                  category: getFileCategory(ext),
+                  isShared: isFileShared,
                   url: url,
                   downloadUrl: `/api/drive/download?folder=${encodeURIComponent(folderKey)}&file=${encodeURIComponent(file)}`,
                   isGithub: false,
@@ -1724,14 +2063,17 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
     }
 
     let images = Array.from(fileMap.values());
-    const requestedFile = (req.query.file as string)?.trim();
-    if (requestedFile) {
+    const filteredRequestedFile = (req.query.file as string)?.trim();
+    if (filteredRequestedFile) {
       images = images.filter(
         (img) =>
-          img.name.toLowerCase() === requestedFile.toLowerCase() ||
-          encodeURIComponent(img.name).toLowerCase() === requestedFile.toLowerCase()
+          img.name.toLowerCase() === filteredRequestedFile.toLowerCase() ||
+          encodeURIComponent(img.name).toLowerCase() === filteredRequestedFile.toLowerCase()
       );
-      // Recalculate totalBytes for the requested file
+      totalBytes = images.reduce((acc, cur) => acc + (cur.size || 0), 0);
+    } else if (!isAdmin && !folder?.isShared) {
+      // If folder is private, guest only sees specifically shared files
+      images = images.filter((img) => img.isShared === true);
       totalBytes = images.reduce((acc, cur) => acc + (cur.size || 0), 0);
     }
 
@@ -1739,8 +2081,10 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      folderId: folderKey,
+      folderId: folder ? folder.id : folderKey,
       folderName,
+      isShared: folder ? folder.isShared : false,
+      allowDownload: folder ? folder.allowDownload !== false : true,
       count: images.length,
       totalBytes,
       totalSizeFormatted: formatBytes(totalBytes),
@@ -1752,18 +2096,35 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
   }
 });
 
-// 7. Download File
+// 7. Download File (with strict access control)
 app.get("/api/drive/download", async (req: Request, res: Response) => {
   try {
     const filename = req.query.file as string;
-    const folderKey = (req.query.folder as string) || "1";
+    const folderKey = (req.query.folder as string) || (req.query.share as string) || "1";
     if (!filename || typeof filename !== "string") {
       return res.status(400).send("Thiếu tham số file");
     }
 
-    const safeName = path.basename(filename);
-    const { localDirs } = await resolveFolderDirs(folderKey);
+    const { folder, localDirs } = await resolveFolder(folderKey);
+    const isAdmin = checkIsAdmin(req);
 
+    const isFileSpecificallyShared = !!(
+      filename &&
+      Array.isArray(folder?.sharedFiles) &&
+      folder.sharedFiles.some((f) => f.toLowerCase() === filename.toLowerCase())
+    );
+
+    // STRICT ACCESS CONTROL
+    if (!isAdmin) {
+      if (!folder || (!folder.isShared && !isFileSpecificallyShared)) {
+        return res.status(403).send("Truy cập bị từ chối: Tệp này chưa được chia sẻ.");
+      }
+      if (folder.allowDownload === false) {
+        return res.status(403).send("Thư mục này không cho phép tải xuống.");
+      }
+    }
+
+    const safeName = path.basename(filename);
     for (const dir of localDirs) {
       const targetPath = path.join(dir, safeName);
       if (fs.existsSync(targetPath)) {
@@ -1773,8 +2134,10 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
 
     // Direct check public and dist
     const directPaths = [
+      path.join(process.cwd(), "public", "img", safeName),
       path.join(process.cwd(), "public", "fme-ctut", safeName),
       path.join(process.cwd(), "public", "drive", safeName),
+      path.join(process.cwd(), "dist", "img", safeName),
       path.join(process.cwd(), "dist", "fme-ctut", safeName),
       path.join(process.cwd(), "dist", "drive", safeName),
     ];
@@ -1802,7 +2165,7 @@ app.post("/api/drive/upload", async (req: Request, res: Response) => {
 
     const safeName = path.basename(filename);
     const ext = path.extname(safeName).toLowerCase();
-    if (!DRIVE_IMAGE_EXTS.has(ext)) {
+    if (!isDriveSupportedFile(safeName)) {
       return res.status(400).json({ success: false, message: "Định dạng tệp không được hỗ trợ" });
     }
 
@@ -1997,25 +2360,17 @@ app.delete("/api/fme-ctut/delete", (req: Request, res: Response) => {
   app._router.handle(req, res);
 });
 
-// Static routing for /drive, /fme-ctut, and assets
-app.use("/drive", express.static(path.join(process.cwd(), "public", "drive")));
-app.use("/fme-ctut", express.static(path.join(process.cwd(), "public", "fme-ctut")));
-
-// Direct HTML handlers for /drive and /fme-ctut (no index.html required in URL)
-app.get(["/drive", "/drive/*"], (req: Request, res: Response, next: NextFunction) => {
+// Static assets routing for media files inside /drive and /fme-ctut
+app.use("/drive", (req: Request, res: Response, next: NextFunction) => {
+  // Only serve static media files that have extensions (jpg, png, webp, etc.)
   if (req.path.includes(".") && !req.path.endsWith(".html")) {
-    return next();
+    return express.static(path.join(process.cwd(), "public", "drive"))(req, res, next);
   }
-  const driveHtml = path.join(process.cwd(), "public", "drive", "index.html");
-  if (fs.existsSync(driveHtml)) {
-    return res.sendFile(driveHtml);
-  }
-  const distDriveHtml = path.join(process.cwd(), "dist", "drive", "index.html");
-  if (fs.existsSync(distDriveHtml)) {
-    return res.sendFile(distDriveHtml);
-  }
+  // Let SPA / Vite handle page routes (/drive, /drive?share=..., etc.)
   next();
 });
+app.use("/fme-ctut", express.static(path.join(process.cwd(), "public", "fme-ctut")));
+app.use("/img", express.static(path.join(process.cwd(), "public", "img")));
 
 app.get(["/fme-ctut", "/fme-ctut/*"], (req: Request, res: Response, next: NextFunction) => {
   if (req.path.includes(".") && !req.path.endsWith(".html")) {
@@ -2042,8 +2397,6 @@ async function startServer() {
     });
     app.use((req, res, next) => {
       if (
-        req.path === "/drive" ||
-        req.path.startsWith("/drive/") ||
         req.path.startsWith("/api") ||
         req.path === "/fme-ctut" ||
         req.path.startsWith("/fme-ctut/")

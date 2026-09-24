@@ -8,3 +8,6 @@ clean 2
 filter 5
 recorner diagonal
 status_file
+
+
+
