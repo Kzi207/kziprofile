@@ -53,6 +53,10 @@ import {
   Minimize2,
   Maximize2,
   Minus,
+  Edit3,
+  Key,
+  Unlock,
+  EyeOff,
 } from "lucide-react";
 import DriveUploadStation from "./DriveUploadStation";
 
@@ -389,6 +393,31 @@ export default function DriveApp() {
   const [folderToDelete, setFolderToDelete] = useState<DriveFolder | null>(null);
   const [isDeletingFolder, setIsDeletingFolder] = useState(false);
 
+  // Folder Rename Modal states
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [folderToRename, setFolderToRename] = useState<DriveFolder | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState("");
+  const [renameFolderDesc, setRenameFolderDesc] = useState("");
+  const [renameFolderPassword, setRenameFolderPassword] = useState("");
+  const [renameRemovePassword, setRenameRemovePassword] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+
+  // Folder Password Unlock Modal & Access Control states
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [folderToUnlock, setFolderToUnlock] = useState<DriveFolder | null>(null);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState("");
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  const [showUnlockPasswordText, setShowUnlockPasswordText] = useState(false);
+  const [unlockedFolderIds, setUnlockedFolderIds] = useState<Set<string>>(() => {
+    try {
+      const saved = sessionStorage.getItem("drive_unlocked_folders");
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   // File Deletion Modal states
   const [showDeleteFileModal, setShowDeleteFileModal] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<DriveFile | null>(null);
@@ -664,7 +693,144 @@ export default function DriveApp() {
     });
   };
 
-  // Direct Upload to Current Folder in /drive without navigating to /drive/upload
+  // Helper to mark a folder unlocked for this session
+  const markFolderUnlocked = (folderId: string) => {
+    setUnlockedFolderIds((prev) => {
+      const next = new Set(prev);
+      next.add(folderId);
+      try {
+        sessionStorage.setItem("drive_unlocked_folders", JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Helper to lock a folder again
+  const lockFolder = (folderId: string) => {
+    setUnlockedFolderIds((prev) => {
+      const next = new Set(prev);
+      next.delete(folderId);
+      try {
+        sessionStorage.setItem("drive_unlocked_folders", JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+    showToast("Đã khóa lại thư mục!");
+  };
+
+  // Folder unlock handler
+  const handleUnlockFolder = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!folderToUnlock || !unlockPassword.trim()) {
+      setUnlockError("Vui lòng nhập mật khẩu!");
+      return;
+    }
+    setIsUnlocking(true);
+    setUnlockError("");
+    try {
+      const res = await fetch("/api/drive/folders/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId: folderToUnlock.id, password: unlockPassword.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Mật khẩu không chính xác!");
+      }
+      markFolderUnlocked(folderToUnlock.id);
+      setShowUnlockModal(false);
+      const unlockedTarget = folderToUnlock;
+      setFolderToUnlock(null);
+      setUnlockPassword("");
+      setActiveFolder(unlockedTarget);
+      showToast(`Đã mở khóa thư mục "${unlockedTarget.name}" thành công!`);
+    } catch (err: any) {
+      setUnlockError(err.message || "Mật khẩu không chính xác!");
+    } finally {
+      setIsUnlocking(false);
+    }
+  };
+
+  // Safe Folder Click Handler (Prompts for password if locked)
+  const handleSelectFolder = (folder: DriveFolder | null) => {
+    if (!folder) {
+      setActiveFolder(null);
+      return;
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const isPublicBypass = urlParams.get("open") === "public" || urlParams.get("mode") === "public";
+
+    // If folder is password protected and hasn't been unlocked yet
+    if (folder.hasPassword && !unlockedFolderIds.has(folder.id) && !isPublicBypass) {
+      setFolderToUnlock(folder);
+      setUnlockPassword("");
+      setUnlockError("");
+      setShowUnlockModal(true);
+      return;
+    }
+
+    setActiveFolder(folder);
+  };
+
+  // Rename Folder Handler
+  const handleRenameFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!folderToRename || !renameFolderName.trim()) {
+      showToast("Vui lòng nhập tên thư mục!");
+      return;
+    }
+    setIsRenaming(true);
+    try {
+      const payload: any = {
+        name: renameFolderName.trim(),
+        description: renameFolderDesc.trim(),
+      };
+      if (renameRemovePassword) {
+        payload.removePassword = true;
+      } else if (renameFolderPassword.trim()) {
+        payload.password = renameFolderPassword.trim();
+      }
+
+      const res = await fetch(`/api/drive/folders/${encodeURIComponent(folderToRename.id)}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Đổi tên thư mục thất bại");
+      }
+
+      showToast(`Đã cập nhật thư mục "${renameFolderName.trim()}" thành công!`);
+      setShowRenameModal(false);
+      setFolderToRename(null);
+      setRenameFolderName("");
+      setRenameFolderDesc("");
+      setRenameFolderPassword("");
+      setRenameRemovePassword(false);
+      await fetchFolders();
+      if (activeFolder?.id === folderToRename.id) {
+        setActiveFolder((prev) =>
+          prev
+            ? {
+                ...prev,
+                name: renameFolderName.trim(),
+                folder: renameFolderName.trim(),
+                description: renameFolderDesc.trim(),
+                hasPassword: renameRemovePassword ? false : renameFolderPassword.trim() ? true : prev.hasPassword,
+              }
+            : null
+        );
+      }
+    } catch (err: any) {
+      showToast(err.message || "Lỗi đổi tên thư mục");
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  // Direct Upload to Current Folder in /drive without navigating to /drive/upload (Fast FormData)
   const uploadFilesDirectly = async (filesList: FileList | File[], targetFolder?: DriveFolder | null) => {
     const destinationFolder = targetFolder || activeFolder || folders[0];
     if (!destinationFolder) {
@@ -685,7 +851,7 @@ export default function DriveApp() {
       name: f.name,
       size: f.size,
       status: "uploading" as const,
-      progress: "Đang nạp file & gửi Catbox.moe...",
+      progress: "Đang tải nhanh lên Catbox.moe...",
     }));
     setQuickUploadList(initialItems);
 
@@ -694,21 +860,20 @@ export default function DriveApp() {
       const file = filesArray[i];
       try {
         if (file.size > 200 * 1024 * 1024) {
-          throw new Error(`Dung lượng tệp (${(file.size / (1024 * 1024)).toFixed(1)} MB) vượt quá giới hạn tối đa 200MB của Catbox.moe! Vui lòng nén hoặc chọn video nhỏ hơn.`);
+          throw new Error(`Dung lượng tệp (${(file.size / (1024 * 1024)).toFixed(1)} MB) vượt quá giới hạn 200MB của Catbox.moe!`);
         }
 
-        const base64Data = await fileToBase64(file);
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("folder", targetFolderKey);
+
+        const headers: Record<string, string> = {};
         if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
 
         const res = await fetch("/api/drive/upload", {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            folder: targetFolderKey,
-            filename: file.name,
-            base64: base64Data,
-          }),
+          body: formData,
         });
 
         const contentType = res.headers.get("content-type") || "";
@@ -722,19 +887,30 @@ export default function DriveApp() {
         }
 
         successCount++;
+        showToast(`✅ [${successCount}/${filesArray.length}] Đã tải lên: "${file.name}"`);
+
         setQuickUploadList((prev) =>
           prev.map((item, idx) =>
             idx === i
               ? {
                   ...item,
                   status: "success",
-                  progress: data.file?.catboxUrl ? "Đã lưu Local & Catbox.moe!" : "Đã lưu máy chủ Local!",
+                  progress: data.file?.catboxUrl ? "Đã lưu Catbox.moe & DB!" : "Đã lưu thành công!",
                   catboxUrl: data.file?.catboxUrl,
                   localUrl: data.file?.url,
                 }
               : item
           )
         );
+
+        // Real-time insert newly uploaded file into gallery immediately
+        if (data.file && (activeFolder?.id === destinationFolder.id || activeFolder?.name === destinationFolder.name)) {
+          setFiles((prev) => {
+            const exists = prev.some((f) => f.name.toLowerCase() === data.file.name.toLowerCase());
+            if (exists) return prev;
+            return [data.file, ...prev];
+          });
+        }
       } catch (err: any) {
         setQuickUploadList((prev) =>
           prev.map((item, idx) =>
@@ -752,7 +928,7 @@ export default function DriveApp() {
     }
 
     setIsQuickUploading(false);
-    showToast(`Đã tải lên ${successCount}/${filesArray.length} tệp vào "${destinationFolder.name}"!`);
+    showToast(`🎉 Hoàn tất tải lên ${successCount}/${filesArray.length} tệp vào "${destinationFolder.name}"!`);
     fetchFiles(destinationFolder);
     fetchFolders();
   };
@@ -1424,11 +1600,13 @@ export default function DriveApp() {
               folders.map((folder) => {
                 const isActive = activeFolder?.id === folder.id;
                 const canDeleteFolder = Boolean(adminToken) && folder.id !== "1" && folder.id !== "img";
+                const canRenameFolder = Boolean(adminToken);
+                const isFolderUnlocked = !folder.hasPassword || unlockedFolderIds.has(folder.id);
                 return (
                   <div
                     key={folder.id}
                     onClick={() => {
-                      setActiveFolder(folder);
+                      handleSelectFolder(folder);
                       setMobileSidebarOpen(false);
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all group cursor-pointer ${
@@ -1439,7 +1617,11 @@ export default function DriveApp() {
                   >
                     <div className="flex items-center gap-2.5 truncate min-w-0">
                       {folder.hasPassword ? (
-                        <FolderLock className="w-4 h-4 text-amber-400 shrink-0" />
+                        isFolderUnlocked ? (
+                          <FolderLock className="w-4 h-4 text-emerald-400 shrink-0" title="Đã mở khóa" />
+                        ) : (
+                          <FolderLock className="w-4 h-4 text-amber-400 shrink-0" title="Được bảo vệ bằng mật khẩu" />
+                        )
                       ) : folder.isShared ? (
                         <FolderCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                       ) : (
@@ -1449,6 +1631,24 @@ export default function DriveApp() {
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {canRenameFolder && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFolderToRename(folder);
+                            setRenameFolderName(folder.name);
+                            setRenameFolderDesc(folder.description || "");
+                            setRenameFolderPassword("");
+                            setRenameRemovePassword(false);
+                            setShowRenameModal(true);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-400 transition-all cursor-pointer"
+                          title={`Đổi tên thư mục "${folder.name}"`}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {canDeleteFolder && (
                         <button
                           type="button"
@@ -1601,6 +1801,38 @@ export default function DriveApp() {
                     <span>{isSelectMode ? "Thoát chọn" : "Chọn nhiều"}</span>
                   </button>
 
+                  {Boolean(adminToken) && (
+                    <button
+                      onClick={() => {
+                        setFolderToRename(activeFolder);
+                        setRenameFolderName(activeFolder.name);
+                        setRenameFolderDesc(activeFolder.description || "");
+                        setRenameFolderPassword("");
+                        setRenameRemovePassword(false);
+                        setShowRenameModal(true);
+                      }}
+                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/60 hover:text-white transition-all cursor-pointer shadow-sm"
+                      title={`Đổi tên thư mục "${activeFolder.name}"`}
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Đổi Tên</span>
+                    </button>
+                  )}
+
+                  {activeFolder.hasPassword && unlockedFolderIds.has(activeFolder.id) && (
+                    <button
+                      onClick={() => {
+                        lockFolder(activeFolder.id);
+                        setActiveFolder(null);
+                      }}
+                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-amber-500/40 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-white transition-all cursor-pointer shadow-sm"
+                      title="Khóa lại thư mục này"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Khóa Lại</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       setShareModalFolder(activeFolder);
@@ -1613,7 +1845,7 @@ export default function DriveApp() {
                     <span>Chia sẻ Thư mục</span>
                   </button>
 
-                  {activeFolder.id !== "img" && activeFolder.id !== "1" && (
+                  {activeFolder.id !== "img" && activeFolder.id !== "1" && Boolean(adminToken) && (
                     <button
                       onClick={() => {
                         setFolderToDelete(activeFolder);
@@ -1742,16 +1974,22 @@ export default function DriveApp() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {folders.map((folder) => {
                     const canDeleteFolder = Boolean(adminToken) && folder.id !== "1" && folder.id !== "img";
+                    const canRenameFolder = Boolean(adminToken);
+                    const isFolderUnlocked = !folder.hasPassword || unlockedFolderIds.has(folder.id);
                     return (
                       <div
                         key={folder.id}
-                        onClick={() => setActiveFolder(folder)}
+                        onClick={() => handleSelectFolder(folder)}
                         className="group p-5 rounded-2xl bg-gray-800/40 hover:bg-gray-800/80 border border-gray-800 hover:border-cyan-500/50 transition-all cursor-pointer shadow-lg hover:shadow-[0_0_20px_rgba(34,211,238,0.15)] flex flex-col justify-between space-y-4"
                       >
                         <div className="flex items-start justify-between">
                           <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-110 transition-transform">
                             {folder.hasPassword ? (
-                              <FolderLock className="w-6 h-6 text-amber-400" />
+                              isFolderUnlocked ? (
+                                <FolderLock className="w-6 h-6 text-emerald-400" title="Thư mục bảo mật (Đã mở khóa)" />
+                              ) : (
+                                <FolderLock className="w-6 h-6 text-amber-400" title="Thư mục bảo mật (Cần mật khẩu)" />
+                              )
                             ) : folder.isShared ? (
                               <FolderCheck className="w-6 h-6 text-emerald-400" />
                             ) : (
@@ -1760,6 +1998,15 @@ export default function DriveApp() {
                           </div>
 
                           <div className="flex items-center gap-1.5">
+                            {folder.hasPassword && (
+                              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                                isFolderUnlocked
+                                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                  : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                              }`}>
+                                {isFolderUnlocked ? "Đã mở khóa" : "Có mật khẩu"}
+                              </span>
+                            )}
                             {folder.isShared ? (
                               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                                 Công khai
@@ -1768,6 +2015,24 @@ export default function DriveApp() {
                               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-400">
                                 Riêng tư
                               </span>
+                            )}
+                            {canRenameFolder && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFolderToRename(folder);
+                                  setRenameFolderName(folder.name);
+                                  setRenameFolderDesc(folder.description || "");
+                                  setRenameFolderPassword("");
+                                  setRenameRemovePassword(false);
+                                  setShowRenameModal(true);
+                                }}
+                                className="p-1 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/20 transition-all cursor-pointer"
+                                title={`Đổi tên thư mục "${folder.name}"`}
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
                             )}
                             {canDeleteFolder && (
                               <button
@@ -2828,35 +3093,126 @@ export default function DriveApp() {
                 )}
               </div>
 
-              {/* Share URL */}
+              {/* Share URLs */}
               {shareModalFolder.isShared ? (
-                <div className="space-y-2">
-                  <label className="text-xs text-gray-400">Liên kết chia sẻ khách (Chỉ xem):</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${window.location.origin}/drive?share=${encodeURIComponent(
-                        shareModalFolder.id
-                      )}`}
-                      className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-cyan-300 font-mono focus:outline-none"
-                    />
-                    <button
-                      onClick={() => {
-                        const link = `${window.location.origin}/drive?share=${encodeURIComponent(
-                          shareModalFolder.id
-                        )}`;
-                        navigator.clipboard.writeText(link);
-                        setShareCopied(true);
-                        showToast("Đã sao chép liên kết vào bộ nhớ tạm!");
-                        setTimeout(() => setShareCopied(false), 2000);
-                      }}
-                      className="px-3 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-                    >
-                      {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{shareCopied ? "Đã chép" : "Sao chép"}</span>
-                    </button>
-                  </div>
+                <div className="space-y-3.5">
+                  {shareModalFolder.hasPassword ? (
+                    <>
+                      {/* OPTION 1: Public Bypass (No Password Required) */}
+                      <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/40 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Tùy chọn 1: Chia sẻ Công khai (Không cần MK)</span>
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
+                            Vào thẳng
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 leading-tight">
+                          Người nhận mở liên kết sẽ <strong>vào xem & tải tệp ngay</strong> mà không cần nhập mật khẩu.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            readOnly
+                            value={`${window.location.origin}/drive?share=${encodeURIComponent(
+                              shareModalFolder.id
+                            )}&open=public`}
+                            className="flex-1 bg-gray-900/90 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono focus:outline-none truncate"
+                          />
+                          <button
+                            onClick={() => {
+                              const link = `${window.location.origin}/drive?share=${encodeURIComponent(
+                                shareModalFolder.id
+                              )}&open=public`;
+                              navigator.clipboard.writeText(link);
+                              setShareCopied("public" as any);
+                              showToast("Đã chép liên kết chia sẻ công khai!");
+                              setTimeout(() => setShareCopied(false), 2000);
+                            }}
+                            className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-lg flex items-center gap-1 transition-all cursor-pointer shrink-0"
+                          >
+                            {(shareCopied as any) === "public" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{(shareCopied as any) === "public" ? "Đã chép" : "Sao chép"}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* OPTION 2: Password Protected (Requires Password) */}
+                      <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/40 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Tùy chọn 2: Chia sẻ Có Mật Khẩu (Cần MK mới vào)</span>
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
+                            Bảo vệ 🔐
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 leading-tight">
+                          Người nhận mở link <strong>bắt buộc phải nhập đúng mật khẩu</strong> của thư mục mới được vào xem nội dung.
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            readOnly
+                            value={`${window.location.origin}/drive?share=${encodeURIComponent(
+                              shareModalFolder.id
+                            )}&mode=protected`}
+                            className="flex-1 bg-gray-900/90 border border-amber-500/30 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 font-mono focus:outline-none truncate"
+                          />
+                          <button
+                            onClick={() => {
+                              const link = `${window.location.origin}/drive?share=${encodeURIComponent(
+                                shareModalFolder.id
+                              )}&mode=protected`;
+                              navigator.clipboard.writeText(link);
+                              setShareCopied("protected" as any);
+                              showToast("Đã chép liên kết chia sẻ có mật khẩu!");
+                              setTimeout(() => setShareCopied(false), 2000);
+                            }}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-lg flex items-center gap-1 transition-all cursor-pointer shrink-0"
+                          >
+                            {(shareCopied as any) === "protected" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{(shareCopied as any) === "protected" ? "Đã chép" : "Sao chép"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-xs text-gray-400">Liên kết chia sẻ khách (Chỉ xem):</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${window.location.origin}/drive?share=${encodeURIComponent(
+                            shareModalFolder.id
+                          )}`}
+                          className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-cyan-300 font-mono focus:outline-none"
+                        />
+                        <button
+                          onClick={() => {
+                            const link = `${window.location.origin}/drive?share=${encodeURIComponent(
+                              shareModalFolder.id
+                            )}`;
+                            navigator.clipboard.writeText(link);
+                            setShareCopied(true);
+                            showToast("Đã sao chép liên kết vào bộ nhớ tạm!");
+                            setTimeout(() => setShareCopied(false), 2000);
+                          }}
+                          className="px-3 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                        >
+                          {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{shareCopied ? "Đã chép" : "Sao chép"}</span>
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-gray-500">
+                        ℹ️ Thư mục này hiện không có mật khẩu. Bạn có thể cài đặt mật khẩu trong phần <strong>Đổi Tên & Cài đặt</strong>.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
@@ -2864,6 +3220,226 @@ export default function DriveApp() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* UNLOCK FOLDER MODAL (PASSWORD PROMPT FOR ADMIN & GUESTS) */}
+      {showUnlockModal && folderToUnlock && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
+          <div className="max-w-md w-full rounded-2xl bg-[#0b1120] border border-amber-500/50 p-6 space-y-5 shadow-2xl relative shadow-amber-500/10">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+                  <FolderLock className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Thư Mục Bảo Mật</h3>
+                  <p className="text-[11px] text-amber-400 font-mono">Yêu cầu xác thực mật khẩu</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowUnlockModal(false);
+                  setFolderToUnlock(null);
+                  setUnlockPassword("");
+                  setUnlockError("");
+                }}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-gray-900/80 border border-gray-800 space-y-1">
+              <div className="text-[11px] text-gray-400">Thư mục đang truy cập:</div>
+              <div className="font-bold text-white text-sm flex items-center gap-1.5">
+                <Folder className="w-4 h-4 text-cyan-400" />
+                <span>{folderToUnlock.name}</span>
+              </div>
+              {folderToUnlock.description && (
+                <div className="text-xs text-gray-400 mt-1">{folderToUnlock.description}</div>
+              )}
+            </div>
+
+            <form onSubmit={handleUnlockFolder} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                  Nhập mật khẩu để mở khóa <span className="text-amber-400">*</span>
+                </label>
+                <div className="relative">
+                  <Key className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type={showUnlockPasswordText ? "text" : "password"}
+                    autoFocus
+                    required
+                    value={unlockPassword}
+                    onChange={(e) => {
+                      setUnlockPassword(e.target.value);
+                      setUnlockError("");
+                    }}
+                    placeholder="Nhập mật khẩu thư mục..."
+                    className="w-full bg-gray-900 border border-gray-700 focus:border-amber-400 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white focus:outline-none transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowUnlockPasswordText(!showUnlockPasswordText)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white cursor-pointer"
+                  >
+                    {showUnlockPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {unlockError && (
+                  <p className="text-xs text-red-400 font-medium mt-1.5 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>{unlockError}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUnlockModal(false);
+                    setFolderToUnlock(null);
+                    setUnlockPassword("");
+                    setUnlockError("");
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold text-xs cursor-pointer transition-colors"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUnlocking || !unlockPassword.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/25 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isUnlocking ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
+                  <span>{isUnlocking ? "Đang xác thực..." : "Mở Khóa Thư Mục"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RENAME & EDIT FOLDER MODAL */}
+      {showRenameModal && folderToRename && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
+          <div className="max-w-md w-full rounded-2xl bg-[#0b1120] border border-cyan-500/40 p-6 space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.3)]">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Đổi Tên & Cài Đặt Thư Mục</h3>
+                  <p className="text-[11px] text-gray-400 font-mono">Cập nhật thông tin thư mục</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowRenameModal(false);
+                  setFolderToRename(null);
+                }}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRenameFolder} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                  Tên thư mục mới <span className="text-cyan-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={renameFolderName}
+                  onChange={(e) => setRenameFolderName(e.target.value)}
+                  placeholder="Nhập tên thư mục..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                  Mô tả thư mục (Tùy chọn)
+                </label>
+                <input
+                  type="text"
+                  value={renameFolderDesc}
+                  onChange={(e) => setRenameFolderDesc(e.target.value)}
+                  placeholder="Mô tả mục đích lưu trữ..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors"
+                />
+              </div>
+
+              {/* Password management in Rename Modal */}
+              <div className="p-3.5 rounded-xl bg-gray-900/80 border border-gray-800 space-y-3">
+                <div className="flex items-center justify-between text-xs font-semibold text-gray-300">
+                  <span className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Mật khẩu bảo vệ</span>
+                  </span>
+                  {folderToRename.hasPassword && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                      Đang có mật khẩu
+                    </span>
+                  )}
+                </div>
+
+                {folderToRename.hasPassword && (
+                  <label className="flex items-center gap-2 text-xs text-red-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={renameRemovePassword}
+                      onChange={(e) => setRenameRemovePassword(e.target.checked)}
+                      className="w-4 h-4 rounded text-red-500 focus:ring-red-400 bg-gray-800 border-gray-600"
+                    />
+                    <span>Gỡ bỏ mật khẩu (chuyển về thư mục không khóa)</span>
+                  </label>
+                )}
+
+                {!renameRemovePassword && (
+                  <div>
+                    <label className="text-[11px] text-gray-400 block mb-1">
+                      {folderToRename.hasPassword ? "Đổi mật khẩu mới (để trống nếu giữ nguyên):" : "Đặt mật khẩu bảo vệ mới (để trống nếu không khóa):"}
+                    </label>
+                    <input
+                      type="password"
+                      value={renameFolderPassword}
+                      onChange={(e) => setRenameFolderPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-gray-950 border border-gray-700 focus:border-amber-400 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none transition-colors"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRenameModal(false);
+                    setFolderToRename(null);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold text-xs cursor-pointer transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRenaming || !renameFolderName.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-500/25 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isRenaming ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>{isRenaming ? "Đang lưu..." : "Lưu Thay Đổi"}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

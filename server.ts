@@ -23,6 +23,12 @@ import {
   ApiError,
 } from "./api_dl/btch.js";
 import rateLimit from "express-rate-limit";
+import multer from "multer";
+
+const driveUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 250 * 1024 * 1024 }, // 250MB
+});
 
 
 
@@ -1765,68 +1771,46 @@ function getCatboxUserhash(): string {
 }
 
 async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string> {
-  const fd = new FormData();
-  fd.append("reqtype", "fileupload");
+  const form = new FormData();
+  form.append("reqtype", "fileupload");
+
   const userhash = getCatboxUserhash();
   if (userhash) {
-    fd.append("userhash", userhash);
+    form.append("userhash", userhash);
   }
+
   const ext = path.extname(filename).toLowerCase();
-  let mimeType = "application/octet-stream";
+  let uploadFilename = path.basename(filename);
 
-  // Sanitize filename for Catbox API to avoid unicode/spacing parsing errors
-  const rawBase = path.basename(filename, ext);
-  const cleanAscii = rawBase
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[đĐ]/g, "d")
-    .replace(/[^a-zA-Z0-9_\-\.]+/g, "_")
-    .slice(0, 50) || "file";
-  let uploadFilename = `${cleanAscii}${ext}`;
-
-  // Catbox blocks .doc and .docx. Since .docx is internally a zip archive,
-  // uploading with .zip extension allows Catbox to accept it safely!
+  // Catbox blocks .docx/.doc directly; uploading as .zip allows Catbox to accept it safely
   if ([".docx", ".doc"].includes(ext)) {
-    uploadFilename = `${cleanAscii}${ext}.zip`;
-    mimeType = "application/zip";
-  } else if ([".jpg", ".jpeg"].includes(ext)) mimeType = "image/jpeg";
-  else if (ext === ".png") mimeType = "image/png";
-  else if (ext === ".webp") mimeType = "image/webp";
-  else if (ext === ".gif") mimeType = "image/gif";
-  else if (ext === ".mp4") mimeType = "video/mp4";
-  else if (ext === ".webm") mimeType = "video/webm";
-  else if (ext === ".mov") mimeType = "video/quicktime";
-  else if (ext === ".mkv") mimeType = "video/x-matroska";
-  else if (ext === ".avi") mimeType = "video/x-msvideo";
-  else if (ext === ".mp3") mimeType = "audio/mpeg";
-  else if (ext === ".wav") mimeType = "audio/wav";
-  else if (ext === ".ogg") mimeType = "audio/ogg";
-  else if (ext === ".pdf") mimeType = "application/pdf";
-  else if (ext === ".txt") mimeType = "text/plain";
-  else if ([".zip", ".rar", ".7z", ".tar", ".gz"].includes(ext)) mimeType = "application/zip";
+    uploadFilename = `${path.basename(filename, ext)}.zip`;
+  }
 
   if (buffer.length > 200 * 1024 * 1024) {
-    throw new Error(`Dung lượng tệp (${formatBytes(buffer.length)}) vượt quá giới hạn tối đa 200MB của Catbox.moe! Vui lòng chọn video dưới 200MB.`);
+    throw new Error(`Dung lượng tệp (${formatBytes(buffer.length)}) vượt quá giới hạn 200MB của Catbox.moe!`);
   }
 
-  const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
-  fd.append("fileToUpload", blob, uploadFilename);
+  const blob = new Blob([new Uint8Array(buffer)]);
+  form.append("fileToUpload", blob, uploadFilename);
 
-  // 5 minutes timeout for large video uploads
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 300000);
+
   try {
-    const res = await fetch("https://catbox.moe/user/api.php", {
+    const response = await fetch("https://catbox.moe/user/api.php", {
       method: "POST",
-      body: fd,
+      body: form,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      throw new Error(`Lỗi máy chủ Catbox (${res.status}): ${errText || "Không thể lưu tệp"}`);
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      throw new Error(`Upload lỗi (${response.status}): ${errText || "Không thể lưu tệp"}`);
     }
-    const url = (await res.text()).trim();
+
+    const url = (await response.text()).trim();
     if (!url.startsWith("http")) {
       throw new Error(`Catbox phản hồi: ${url}`);
     }
@@ -2766,21 +2750,31 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
 });
 
 // 8. Upload File to Folder (Dual Storage: Local + Catbox.moe + DB)
-app.post("/api/drive/upload", async (req: Request, res: Response) => {
+app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, res: Response) => {
   try {
-    const { folder, filename, base64 } = req.body;
-    const folderId = folder || "fme-ctut";
-    if (!filename || !base64) {
+    const folderId = (req.body.folder as string)?.trim() || "fme-ctut";
+    let safeName = "";
+    let buffer: Buffer;
+
+    if (req.file) {
+      safeName = path.basename(req.file.originalname);
+      buffer = req.file.buffer;
+    } else if (req.body.filename && req.body.base64) {
+      safeName = path.basename(req.body.filename);
+      const cleanBase64 = typeof req.body.base64 === "string" && req.body.base64.includes(",")
+        ? req.body.base64.split(",")[1]
+        : req.body.base64;
+      buffer = Buffer.from(cleanBase64, "base64");
+    } else {
       return res.status(400).json({ success: false, message: "Thiếu dữ liệu tệp hoặc tên tệp" });
     }
 
-    const safeName = path.basename(filename);
     const ext = path.extname(safeName).toLowerCase();
     if (!isDriveSupportedFile(safeName)) {
       return res.status(400).json({ success: false, message: "Định dạng tệp không được hỗ trợ" });
     }
 
-    // Ensure folder exists in DB metadata and filesystem; if not, auto-create it (e.g. folder KTS)
+    // Ensure folder exists in DB metadata and filesystem; if not, auto-create it
     try {
       const storedFolders = await getStoredFolders();
       const folderExists = storedFolders.some(
@@ -2813,71 +2807,11 @@ app.post("/api/drive/upload", async (req: Request, res: Response) => {
         await saveStoredFolders(storedFolders);
         console.log(`[Auto-create Folder] Created folder "${folderId}" in DB metadata.`);
       }
-
     } catch (errDir) {
       console.warn("Folder check/create warning:", errDir);
     }
 
-    const cleanBase64 = typeof base64 === "string" && base64.includes(",") ? base64.split(",")[1] : base64;
-    const token = getEffectiveGithubToken(req);
-    const { githubPath } = resolveFolderPaths(folderId);
-
-    let githubCommitted = false;
-    let githubCommitUrl = "";
-
-    // Optional Commit to GitHub if token available
-    if (token) {
-      let sha: string | undefined = undefined;
-      try {
-        const checkRes = await fetch(
-          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}?ref=${GITHUB_BRANCH}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/vnd.github.v3+json",
-              "User-Agent": "Drive-App",
-            },
-          }
-        );
-        if (checkRes.ok) {
-          const existing = await checkRes.json();
-          sha = existing.sha;
-        }
-      } catch (e) {}
-
-      try {
-        const ghPutRes = await fetch(
-          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}`,
-          {
-            method: "PUT",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/vnd.github.v3+json",
-              "Content-Type": "application/json",
-              "User-Agent": "Drive-App",
-            },
-            body: JSON.stringify({
-              message: `Upload ${safeName} to ${folderId} via Drive`,
-              content: cleanBase64,
-              branch: GITHUB_BRANCH,
-              ...(sha ? { sha } : {}),
-            }),
-          }
-        );
-
-        if (ghPutRes.ok) {
-          const ghData = await ghPutRes.json();
-          githubCommitted = true;
-          githubCommitUrl = ghData.commit?.html_url || "";
-        }
-      } catch (ghErr) {
-        console.warn("GitHub commit warning:", ghErr);
-      }
-    }
-
-    const buffer = Buffer.from(cleanBase64, "base64");
-
-    // 1. Upload directly to Catbox.moe (KHÔNG lưu local vào dự án)
+    // 1. Upload directly to Catbox.moe immediately
     let catboxUrl = "";
     try {
       catboxUrl = await uploadToCatbox(buffer, safeName);
@@ -2909,11 +2843,39 @@ app.post("/api/drive/upload", async (req: Request, res: Response) => {
       backupStatus: "both_active",
     });
 
+    // 3. Optional Background GitHub Backup (Async, Non-blocking so user never waits!)
+    const token = getEffectiveGithubToken(req);
+    if (token) {
+      (async () => {
+        try {
+          const { githubPath } = resolveFolderPaths(folderId);
+          await fetch(
+            `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}`,
+            {
+              method: "PUT",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github.v3+json",
+                "Content-Type": "application/json",
+                "User-Agent": "Drive-App",
+              },
+              body: JSON.stringify({
+                message: `Upload ${safeName} to ${folderId} via Drive`,
+                content: buffer.toString("base64"),
+                branch: GITHUB_BRANCH,
+              }),
+            }
+          );
+        } catch (ghErr) {
+          console.warn("[Background GitHub Commit Warning]:", ghErr);
+        }
+      })();
+    }
+
     return res.json({
       success: true,
       message: `Đã tải tệp lên Catbox.moe và lưu vào cơ sở dữ liệu thành công!`,
-      githubCommitted,
-      githubCommitUrl,
+      githubCommitted: false,
       file: {
         id: fileRecord.id,
         name: safeName,

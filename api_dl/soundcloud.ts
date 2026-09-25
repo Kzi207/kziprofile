@@ -201,7 +201,6 @@ export async function getSoundCloudDownloadInfo(req: Request, input: string, for
       author,
       duration,
       thumbnail: artwork,
-      artwork,
       type: "mp3",
       expires_in: "15 phút",
       expires_at: new Date(expires).toISOString(),

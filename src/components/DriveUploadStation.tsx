@@ -179,30 +179,32 @@ export default function DriveUploadStation({
     });
   };
 
-  // Upload single file
+  // Upload single file via high-speed FormData
   const uploadSingleFile = async (staged: StagedUploadFile, targetFolder: string) => {
     setStagedFiles((prev) =>
       prev.map((item) =>
         item.id === staged.id
-          ? { ...item, status: "uploading", progressText: "Đang nạp file & gửi Catbox.moe..." }
+          ? { ...item, status: "uploading", progressText: "Đang tải nhanh lên Catbox.moe..." }
           : item
       )
     );
 
     try {
-      const base64Data = await fileToBase64(staged.file);
+      if (staged.file.size > 200 * 1024 * 1024) {
+        throw new Error(`Dung lượng tệp (${(staged.file.size / (1024 * 1024)).toFixed(1)} MB) vượt quá giới hạn 200MB của Catbox.moe!`);
+      }
 
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const formData = new FormData();
+      formData.append("file", staged.file);
+      formData.append("folder", targetFolder);
+
+      const headers: Record<string, string> = {};
       if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
 
       const res = await fetch("/api/drive/upload", {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          folder: targetFolder,
-          filename: staged.file.name,
-          base64: base64Data,
-        }),
+        body: formData,
       });
 
       const data = await safeParseJson(res, "Tải lên thất bại");
@@ -217,7 +219,7 @@ export default function DriveUploadStation({
             ? {
                 ...item,
                 status: "success",
-                progressText: data.file?.catboxUrl ? "Đã lưu Local & Catbox.moe!" : "Đã lưu máy chủ Local!",
+                progressText: data.file?.catboxUrl ? "Đã lưu Catbox.moe & DB!" : "Đã lưu thành công!",
                 localUrl: data.file?.url,
                 catboxUrl: data.file?.catboxUrl,
                 backupStatus: data.file?.backupStatus,
@@ -226,6 +228,7 @@ export default function DriveUploadStation({
         )
       );
 
+      showToast(`✅ Đã tải lên thành công: "${staged.file.name}"`);
       return true;
     } catch (err: any) {
       setStagedFiles((prev) =>
@@ -244,7 +247,7 @@ export default function DriveUploadStation({
     }
   };
 
-  // Upload all pending files
+  // Upload all pending files (with 3-thread parallel concurrency for maximum speed)
   const handleUploadAll = async () => {
     const targetFolder = isCreatingNewFolder ? newFolderName.trim() : selectedFolderId;
     if (!targetFolder) {
@@ -261,10 +264,20 @@ export default function DriveUploadStation({
     setIsUploadingAll(true);
     let successCount = 0;
 
-    for (const item of pending) {
-      const ok = await uploadSingleFile(item, targetFolder);
-      if (ok) successCount++;
-    }
+    // Parallel queue with concurrency = 3
+    const concurrency = 3;
+    const queue = [...pending];
+    const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (item) {
+          const ok = await uploadSingleFile(item, targetFolder);
+          if (ok) successCount++;
+        }
+      }
+    });
+
+    await Promise.all(workers);
 
     setIsUploadingAll(false);
     showToast(`Đã tải lên hoàn tất ${successCount}/${pending.length} tệp!`);
