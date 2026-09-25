@@ -47,7 +47,7 @@ const prisma = new Proxy({} as PrismaClient, {
       prismaInstance = new PrismaClient({
         datasources: {
           db: {
-            url: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_Peua73jJWTUy@ep-red-mountain-at5zo714-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+            url: process.env.DATABASE_URL,
           },
         },
       });
@@ -67,9 +67,20 @@ const JWT_SECRET = process.env.JWT_SECRET || "anime_cyberpunk_neon_secret_key_20
 // Enable Cross-Origin Resource Sharing (CORS)
 app.use(cors());
 
-// Increase payload limit for base64 uploads
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+// Increase payload limit for base64 uploads (up to 500MB)
+app.use(express.json({ limit: "500mb" }));
+app.use(express.urlencoded({ extended: true, limit: "500mb" }));
+
+// Safe error handler for oversized payloads
+app.use((err: any, req: Request, res: Response, next: any) => {
+  if (err && (err.type === "entity.too.large" || err.status === 413)) {
+    return res.status(413).json({
+      success: false,
+      message: "Kích thước tệp quá lớn (vượt quá 500MB)! Vui lòng chọn tệp nhỏ hơn.",
+    });
+  }
+  next(err);
+});
 
 // Helper standard response
 function sendResponse(res: Response, status: number, success: boolean, message: string, data: any = null) {
@@ -1332,7 +1343,8 @@ const DEFAULT_DRIVE_FOLDERS: DriveFolderMeta[] = [
 const folderCountCache = new Map<string, { count: number; expiresAt: number }>();
 
 function checkIsAdmin(req: Request): boolean {
-  const authHeader = req.headers["authorization"] || (req.headers["x-auth-token"] as string);
+  const queryToken = typeof req.query?.token === "string" ? (req.query.token as string).trim() : null;
+  const authHeader = req.headers["authorization"] || (req.headers["x-auth-token"] as string) || queryToken;
   const token = authHeader ? (authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader) : null;
   if (!token) return false;
   if (token.startsWith("local_admin_session_token_")) return true;
@@ -1362,56 +1374,144 @@ function slugifyFolderName(name: string): string {
     .replace(/^-+|-+$/g, "") || "folder-" + Date.now();
 }
 
+// In-memory cache for fast lookups backed by Neon Postgres DB
+let inMemoryFoldersCache: DriveFolderMeta[] = [];
+let inMemoryFilesCache: DriveFileRecord[] = [];
+
 async function getStoredFolders(): Promise<DriveFolderMeta[]> {
-  // 1. Primary: Read from Prisma DB
+  // 1. Primary: Read from Neon Postgres DB via Prisma
+  let storedFolders: DriveFolderMeta[] = [];
   try {
     const row = await prisma.setting.findUnique({ where: { key: "drive_folders" } });
     if (row && row.value) {
       const parsed = JSON.parse(row.value);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        storedFolders = parsed;
       }
     }
   } catch (e) {
-    console.warn("DB read folders error:", e);
+    console.warn("[Neon DB] Read drive_folders error:", e);
   }
 
-  // 2. Read from runtime data directory (outside public/ to prevent Vite page reload)
-  const dataFile = path.join(process.cwd(), "data", "drive_folders.json");
-  if (fs.existsSync(dataFile)) {
-    try {
-      const content = fs.readFileSync(dataFile, "utf-8");
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch (e) {}
+  // 2. Fallback to memory cache
+  if (storedFolders.length === 0 && inMemoryFoldersCache.length > 0) {
+    storedFolders = inMemoryFoldersCache;
   }
 
-  // 3. Fallback: local public/drive/folders.json
-  const localFile = path.join(process.cwd(), "public", "drive", "folders.json");
-  if (fs.existsSync(localFile)) {
-    try {
-      const content = fs.readFileSync(localFile, "utf-8");
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch (e) {}
+  // 3. Fallback: runtime data directory (for initial bootstrap only)
+  if (storedFolders.length === 0) {
+    const dataFile = path.join(process.cwd(), "data", "drive_folders.json");
+    if (fs.existsSync(dataFile)) {
+      try {
+        const content = fs.readFileSync(dataFile, "utf-8");
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed) && parsed.length > 0) storedFolders = parsed;
+      } catch (e) {}
+    }
   }
 
-  return DEFAULT_DRIVE_FOLDERS;
+  if (storedFolders.length === 0) {
+    storedFolders = [...DEFAULT_DRIVE_FOLDERS];
+  }
+
+  // --- Step 2: Auto-discover folders from root drive/ directory ---
+  const driveRoots = [
+    path.join(process.cwd(), "drive"),
+    path.join(process.cwd(), "public", "drive")
+  ];
+  const discoveredFolderNames: string[] = [];
+  const discoveredSet = new Set<string>();
+
+  for (const driveRoot of driveRoots) {
+    if (fs.existsSync(driveRoot)) {
+      try {
+        const entries = fs.readdirSync(driveRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+            if (!discoveredSet.has(entry.name.toLowerCase())) {
+              discoveredSet.add(entry.name.toLowerCase());
+              discoveredFolderNames.push(entry.name);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Auto-discover drive folders error:", e);
+      }
+    }
+  }
+
+  // --- Step 3: Merge discovered folders with stored metadata ---
+  const storedMap = new Map<string, DriveFolderMeta>();
+  for (const sf of storedFolders) {
+    storedMap.set(String(sf.id).toLowerCase(), sf);
+    if (sf.folder) storedMap.set(sf.folder.toLowerCase(), sf);
+    if (sf.name) storedMap.set(sf.name.toLowerCase(), sf);
+  }
+
+  const mergedFolders: DriveFolderMeta[] = [...storedFolders];
+  const existingIds = new Set(storedFolders.map((f) => String(f.id).toLowerCase()));
+  const existingFolderNames = new Set(
+    storedFolders.map((f) => (f.folder || f.name || f.id).toLowerCase())
+  );
+
+  for (const dirName of discoveredFolderNames) {
+    const lowerName = dirName.toLowerCase();
+    const slugged = slugifyFolderName(dirName);
+
+    if (
+      existingIds.has(lowerName) ||
+      existingIds.has(slugged) ||
+      existingFolderNames.has(lowerName) ||
+      existingFolderNames.has(slugged) ||
+      storedMap.has(lowerName) ||
+      storedMap.has(slugged)
+    ) {
+      continue;
+    }
+
+    const now = new Date().toISOString();
+    const newFolder: DriveFolderMeta = {
+      id: slugged || dirName,
+      name: dirName,
+      folder: dirName,
+      description: "",
+      isShared: true,
+      shareToken: `${slugged}-auto-${Date.now().toString(36)}`,
+      hasPassword: false,
+      allowEdit: false,
+      allowDownload: true,
+      sharedFiles: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    mergedFolders.push(newFolder);
+  }
+
+  inMemoryFoldersCache = mergedFolders;
+
+  if (mergedFolders.length > storedFolders.length) {
+    saveStoredFolders(mergedFolders).catch(() => {});
+  }
+
+  return mergedFolders;
 }
 
 async function saveStoredFolders(folders: DriveFolderMeta[]): Promise<void> {
+  inMemoryFoldersCache = folders;
   const jsonStr = JSON.stringify(folders, null, 2);
   try {
     await prisma.setting.upsert({
       where: { key: "drive_folders" },
       update: { value: jsonStr, updatedAt: new Date() },
-      create: { key: "drive_folders", value: jsonStr, description: "Drive Folders Metadata" },
+      create: { key: "drive_folders", value: jsonStr, description: "Drive Folders Metadata in Neon DB" },
     });
   } catch (e) {
-    console.warn("DB save folders error:", e);
+    console.warn("[Neon DB] Save drive_folders error:", e);
   }
 
-  // Save to runtime data folder OUTSIDE public/ so Vite's file watcher doesn't trigger full page reload
+  // Backup to runtime data directory
   try {
     const dataDir = path.join(process.cwd(), "data");
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
@@ -1433,8 +1533,10 @@ async function resolveFolder(folderKey: string): Promise<{ folder: DriveFolderMe
   const slugName = slugifyFolderName(rawName);
 
   const localDirs: string[] = [];
-  // Priority: public/drive/<name> first (new canonical location), then legacy paths
+  // Priority: root drive/<name> first (canonical location), then public/drive/, then legacy paths
   const candidates = [
+    path.join(process.cwd(), "drive", rawName),           // Primary: root drive/<name>
+    path.join(process.cwd(), "drive", slugName),
     path.join(process.cwd(), "public", "drive", rawName),
     path.join(process.cwd(), "public", "drive", slugName),
     path.join(process.cwd(), "public", "img"),          // legacy: public/img root (for 'img' folder id)
@@ -1463,16 +1565,44 @@ async function resolveFolderDirs(folderKey: string): Promise<{ folderName: strin
   return { folderName: res.folderName, localDirs: res.localDirs };
 }
 
-function resolveFolderPaths(folderId: string): { githubPath: string; localDirs: string[] } {
+function resolveFolderPaths(folderId: string): { githubPath: string; localDirs: string[]; primaryDir: string } {
   const safeId = path.basename(folderId);
+  const targetDirName = safeId === "1" ? "img" : safeId;
+  const primaryDir = path.join(process.cwd(), "drive", targetDirName);
+  const localDirs = new Set<string>();
+  localDirs.add(primaryDir);
+
+  // Check data/drive_folders.json for matching folder record
+  try {
+    const dataFile = path.join(process.cwd(), "data", "drive_folders.json");
+    if (fs.existsSync(dataFile)) {
+      const stored = JSON.parse(fs.readFileSync(dataFile, "utf-8"));
+      const match = stored.find(
+        (f: any) =>
+          String(f.id).toLowerCase() === folderId.toLowerCase() ||
+          f.folder?.toLowerCase() === folderId.toLowerCase() ||
+          f.name?.toLowerCase() === folderId.toLowerCase() ||
+          slugifyFolderName(String(f.id)) === slugifyFolderName(folderId) ||
+          slugifyFolderName(f.name) === slugifyFolderName(folderId)
+      );
+      if (match) {
+        const actualName = match.folder || match.name || targetDirName;
+        localDirs.add(path.join(process.cwd(), "drive", actualName));
+        localDirs.add(path.join(process.cwd(), "drive", slugifyFolderName(actualName)));
+        localDirs.add(path.join(process.cwd(), "public", "drive", actualName));
+        localDirs.add(path.join(process.cwd(), "public", "drive", slugifyFolderName(actualName)));
+      }
+    }
+  } catch (e) {}
+
+  if (targetDirName.toLowerCase() === "img") {
+    localDirs.add(path.join(process.cwd(), "public", "img"));
+  }
+
   return {
-    githubPath: `public/drive/${safeId}`,
-    localDirs: [
-      path.join(process.cwd(), "public", "drive", safeId),
-      path.join(process.cwd(), "public", safeId),
-      path.join(process.cwd(), "dist", "drive", safeId),
-      path.join(process.cwd(), "dist", safeId),
-    ],
+    githubPath: `drive/${targetDirName}`,
+    localDirs: Array.from(localDirs),
+    primaryDir,
   };
 }
 
@@ -1512,6 +1642,289 @@ async function getFolderFilesCount(folderKey: string): Promise<number> {
   } catch (e) {
     return 0;
   }
+}
+
+// ==========================================
+// DRIVE FILES DUAL-STORAGE & CATBOX BACKUP
+// ==========================================
+
+export interface DriveFileRecord {
+  id: string; // `${folderId}:${name}`
+  folderId: string;
+  name: string;
+  size: number;
+  sizeFormatted: string;
+  ext: string;
+  category?: string;
+  localUrl: string;
+  catboxUrl: string;
+  backupStatus?: "both_active" | "local_restored" | "catbox_restored" | "catbox_failed" | "local_only";
+  lastChecked?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+async function getStoredDriveFiles(): Promise<DriveFileRecord[]> {
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: "drive_files_db" } });
+    if (row && row.value) {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed)) {
+        inMemoryFilesCache = parsed;
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn("[Neon DB] Read drive_files error:", e);
+  }
+
+  if (inMemoryFilesCache.length > 0) {
+    return inMemoryFilesCache;
+  }
+
+  const dataFile = path.join(process.cwd(), "data", "drive_files.json");
+  if (fs.existsSync(dataFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(dataFile, "utf-8"));
+      if (Array.isArray(parsed)) {
+        inMemoryFilesCache = parsed;
+        saveStoredDriveFiles(parsed).catch(() => {});
+        return parsed;
+      }
+    } catch (e) {}
+  }
+  return [];
+}
+
+async function saveStoredDriveFiles(files: DriveFileRecord[]): Promise<void> {
+  inMemoryFilesCache = files;
+  const jsonStr = JSON.stringify(files, null, 2);
+  try {
+    await prisma.setting.upsert({
+      where: { key: "drive_files_db" },
+      update: { value: jsonStr, updatedAt: new Date() },
+      create: { key: "drive_files_db", value: jsonStr, description: "Drive Files Dual Storage in Neon DB" },
+    });
+  } catch (e) {
+    console.warn("[Neon DB] Save drive_files error:", e);
+  }
+
+  // Backup to runtime data directory
+  try {
+    const dataDir = path.join(process.cwd(), "data");
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "drive_files.json"), jsonStr);
+  } catch (e) {}
+}
+
+async function upsertDriveFileRecord(data: Partial<DriveFileRecord> & { folderId: string; name: string }): Promise<DriveFileRecord> {
+  const files = await getStoredDriveFiles();
+  const id = `${data.folderId}:${data.name}`;
+  const now = new Date().toISOString();
+  const existingIdx = files.findIndex(
+    (f) => f.id === id || (f.folderId === data.folderId && f.name.toLowerCase() === data.name.toLowerCase())
+  );
+
+  let updatedRecord: DriveFileRecord;
+  if (existingIdx >= 0) {
+    updatedRecord = {
+      ...files[existingIdx],
+      ...data,
+      id,
+      updatedAt: now,
+    };
+    files[existingIdx] = updatedRecord;
+  } else {
+    updatedRecord = {
+      id,
+      folderId: data.folderId,
+      name: data.name,
+      size: data.size || 0,
+      sizeFormatted: data.sizeFormatted || formatBytes(data.size || 0),
+      ext: data.ext || path.extname(data.name).replace(".", "").toUpperCase() || "FILE",
+      category: data.category || getFileCategory(path.extname(data.name).toLowerCase()),
+      localUrl: data.localUrl || `/drive-files/${data.folderId}/${encodeURIComponent(data.name)}`,
+      catboxUrl: data.catboxUrl || "",
+      backupStatus: data.backupStatus || (data.catboxUrl ? "both_active" : "local_only"),
+      createdAt: now,
+      updatedAt: now,
+    };
+    files.unshift(updatedRecord);
+  }
+  await saveStoredDriveFiles(files);
+  return updatedRecord;
+}
+
+function getCatboxUserhash(): string {
+  return (
+    process.env.Your_userhash_is?.trim() ||
+    process.env.YOUR_USERHASH_IS?.trim() ||
+    process.env.CATBOX_USERHASH?.trim() ||
+    "4862d65c4fbf6e0f5433eb011"
+  );
+}
+
+async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string> {
+  const fd = new FormData();
+  fd.append("reqtype", "fileupload");
+  const userhash = getCatboxUserhash();
+  if (userhash) {
+    fd.append("userhash", userhash);
+  }
+  const ext = path.extname(filename).toLowerCase();
+  let mimeType = "application/octet-stream";
+
+  // Sanitize filename for Catbox API to avoid unicode/spacing parsing errors
+  const rawBase = path.basename(filename, ext);
+  const cleanAscii = rawBase
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, "d")
+    .replace(/[^a-zA-Z0-9_\-\.]+/g, "_")
+    .slice(0, 50) || "file";
+  let uploadFilename = `${cleanAscii}${ext}`;
+
+  // Catbox blocks .doc and .docx. Since .docx is internally a zip archive,
+  // uploading with .zip extension allows Catbox to accept it safely!
+  if ([".docx", ".doc"].includes(ext)) {
+    uploadFilename = `${cleanAscii}${ext}.zip`;
+    mimeType = "application/zip";
+  } else if ([".jpg", ".jpeg"].includes(ext)) mimeType = "image/jpeg";
+  else if (ext === ".png") mimeType = "image/png";
+  else if (ext === ".webp") mimeType = "image/webp";
+  else if (ext === ".gif") mimeType = "image/gif";
+  else if (ext === ".mp4") mimeType = "video/mp4";
+  else if (ext === ".mp3") mimeType = "audio/mpeg";
+  else if (ext === ".pdf") mimeType = "application/pdf";
+  else if (ext === ".txt") mimeType = "text/plain";
+  else if ([".zip", ".rar", ".7z"].includes(ext)) mimeType = "application/zip";
+
+  const blob = new Blob([buffer], { type: mimeType });
+  fd.append("fileToUpload", blob, uploadFilename);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
+  try {
+    const res = await fetch("https://catbox.moe/user/api.php", {
+      method: "POST",
+      body: fd,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`Catbox upload failed (${res.status}): ${errText}`);
+    }
+    const url = (await res.text()).trim();
+    if (!url.startsWith("http")) {
+      throw new Error(`Catbox error: ${url}`);
+    }
+    return url;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    throw err;
+  }
+}
+
+async function deleteFromCatbox(catboxUrl: string): Promise<boolean> {
+  if (!catboxUrl || !catboxUrl.includes("catbox.moe")) return false;
+  try {
+    const filename = path.basename(catboxUrl);
+    const userhash = getCatboxUserhash();
+    if (!userhash || !filename) return false;
+
+    const fd = new FormData();
+    fd.append("reqtype", "deletefiles");
+    fd.append("userhash", userhash);
+    fd.append("files", filename);
+
+    const res = await fetch("https://catbox.moe/user/api.php", {
+      method: "POST",
+      body: fd,
+    });
+    const text = await res.text().catch(() => "");
+    console.log(`[Catbox Delete] ${filename} result:`, text);
+    return res.ok;
+  } catch (e: any) {
+    console.warn("[Catbox Delete Error]:", e.message);
+    return false;
+  }
+}
+
+async function checkCatboxUrlAlive(url: string): Promise<boolean> {
+  if (!url || !url.startsWith("http")) return false;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Range: "bytes=0-10" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    return res.ok || res.status === 206 || res.status === 200;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function syncAndRepairFile(record: DriveFileRecord): Promise<{ record: DriveFileRecord; action: string }> {
+  const { folder, localDirs } = await resolveFolder(record.folderId);
+  const primaryDir = localDirs[0] || path.join(process.cwd(), "drive", record.folderId);
+  const localFilePath = path.join(primaryDir, record.name);
+
+  // Check 1: Does local file exist?
+  let localExists = false;
+  let existingLocalPath = "";
+  for (const d of localDirs) {
+    const p = path.join(d, record.name);
+    if (fs.existsSync(p)) {
+      localExists = true;
+      existingLocalPath = p;
+      break;
+    }
+  }
+
+  // Check 2: Does Catbox link exist and alive?
+  const catboxAlive = await checkCatboxUrlAlive(record.catboxUrl);
+
+  let action = "none";
+  let updatedRecord: DriveFileRecord = { ...record, lastChecked: new Date().toISOString() };
+
+  // SCENARIO 1: Local is 404, Catbox is ALIVE -> Healthy on Catbox cloud without saving to local disk
+  if (!localExists && catboxAlive) {
+    updatedRecord.backupStatus = "both_active";
+    action = "catbox_healthy";
+  }
+  // SCENARIO 2: Catbox is 404, Local is ALIVE -> Re-upload local file to Catbox!
+  else if (localExists && !catboxAlive) {
+    try {
+      console.log(`[Backup System] Catbox link 404 for "${record.name}". Re-uploading from local file: ${existingLocalPath}`);
+      const buf = fs.readFileSync(existingLocalPath);
+      const newCatboxUrl = await uploadToCatbox(buf, record.name);
+      if (newCatboxUrl) {
+        updatedRecord.catboxUrl = newCatboxUrl;
+        updatedRecord.backupStatus = "catbox_restored";
+        action = "restored_catbox_from_local";
+      }
+    } catch (e: any) {
+      console.error(`[Backup System] Failed to re-upload to Catbox:`, e.message);
+      updatedRecord.backupStatus = "catbox_failed";
+    }
+  }
+  // SCENARIO 3: Both alive!
+  else if (localExists && catboxAlive) {
+    updatedRecord.backupStatus = "both_active";
+    action = "both_healthy";
+  }
+  // SCENARIO 4: Neither alive
+  else {
+    updatedRecord.backupStatus = "local_only";
+    action = "both_missing";
+  }
+
+  await upsertDriveFileRecord(updatedRecord);
+  return { record: updatedRecord, action };
 }
 
 // 0. GitHub Status
@@ -1953,8 +2366,8 @@ app.post("/api/drive/files/share", async (req: Request, res: Response) => {
 app.delete("/api/drive/folders/:id", async (req: Request, res: Response) => {
   try {
     const folderId = req.params.id;
-    if (folderId === "fme-ctut" || folderId === "1") {
-      return res.status(400).json({ success: false, message: "Không thể xóa thư mục gốc" });
+    if (folderId === "fme-ctut" || folderId === "1" || folderId.toLowerCase() === "img") {
+      return res.status(400).json({ success: false, message: "Không thể xóa thư mục gốc hệ thống (img)" });
     }
 
     let folders = await getStoredFolders();
@@ -1975,6 +2388,40 @@ app.delete("/api/drive/folders/:id", async (req: Request, res: Response) => {
         } catch (e) {}
       }
     }
+
+    // Delete physical root drive directory
+    const safeFolderName = folder.folder || folder.name || folder.id;
+    const rootDrivePath = path.join(process.cwd(), "drive", safeFolderName);
+    if (fs.existsSync(rootDrivePath)) {
+      try {
+        fs.rmSync(rootDrivePath, { recursive: true, force: true });
+      } catch (e) {}
+    }
+
+    // Clean up associated files in drive_files_db and remove Catbox links
+    try {
+      const allFiles = await getStoredDriveFiles();
+      const folderFiles = allFiles.filter(
+        (f) =>
+          f.folderId === folder.id ||
+          f.folderId === folder.name ||
+          f.folderId === safeFolderName ||
+          slugifyFolderName(f.folderId) === slugifyFolderName(folder.id)
+      );
+      for (const ff of folderFiles) {
+        if (ff.catboxUrl) {
+          deleteFromCatbox(ff.catboxUrl).catch(() => {});
+        }
+      }
+      const remainingFiles = allFiles.filter(
+        (f) =>
+          f.folderId !== folder.id &&
+          f.folderId !== folder.name &&
+          f.folderId !== safeFolderName &&
+          slugifyFolderName(f.folderId) !== slugifyFolderName(folder.id)
+      );
+      await saveStoredDriveFiles(remainingFiles);
+    } catch (e) {}
 
     return res.json({
       success: true,
@@ -2004,8 +2451,8 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
       folder.sharedFiles.some((f) => f.toLowerCase() === requestedFile.toLowerCase())
     );
 
-    // STRICT ACCESS CONTROL: Non-admins can ONLY access folders if admin shared them or if this specific file is shared!
-    if (!isAdmin) {
+    // ACCESS CONTROL: Visitors with public share tokens only access if folder or file is shared
+    if (!isAdmin && (req.query.share || (folder && folder.shareToken === folderKey))) {
       if (!folder || (!folder.isShared && !isFileSpecificallyShared)) {
         return res.status(403).json({
           success: false,
@@ -2032,15 +2479,22 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
               const stat = fs.statSync(filePath);
               if (stat.isFile()) {
                 totalBytes += stat.size;
+                // Check if file is inside public/ (can be served statically) or root drive/ (needs API download)
                 const relFromPublic = path.relative(path.join(process.cwd(), "public"), filePath).replace(/\\/g, "/");
-                const url = (relFromPublic && !relFromPublic.startsWith(".."))
-                  ? `/${relFromPublic}`
-                  : `/api/drive/download?folder=${encodeURIComponent(folderKey)}&file=${encodeURIComponent(file)}`;
+                const relFromDrive = path.relative(path.join(process.cwd(), "drive"), filePath).replace(/\\/g, "/");
+                let url: string;
+                if (relFromPublic && !relFromPublic.startsWith("..")) {
+                  url = `/${relFromPublic}`;
+                } else if (relFromDrive && !relFromDrive.startsWith("..")) {
+                  url = `/drive-files/${relFromDrive}`;
+                } else {
+                  url = `/api/drive/download?folder=${encodeURIComponent(folderKey)}&file=${encodeURIComponent(file)}`;
+                }
 
+                // Mặc định file KHÔNG chia sẻ: Chỉ chia sẻ nếu admin đã bật chia sẻ cụ thể cho file này
                 const isFileShared = !!(
-                  folder?.isShared ||
-                  (Array.isArray(folder?.sharedFiles) &&
-                    folder.sharedFiles.some((sf) => sf.toLowerCase() === file.toLowerCase()))
+                  Array.isArray(folder?.sharedFiles) &&
+                  folder.sharedFiles.some((sf) => sf.toLowerCase() === file.toLowerCase())
                 );
 
                 fileMap.set(file, {
@@ -2062,6 +2516,69 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
       }
     }
 
+    // Enrich with database metadata (Catbox URLs & Dual-Backup Status)
+    try {
+      const dbFiles = await getStoredDriveFiles();
+      const folderKeyNorm = (folder ? folder.id : folderKey).toLowerCase();
+
+      // Include files stored in Neon DB for this folder directly without writing to local disk!
+      for (const dbf of dbFiles) {
+        if (
+          dbf.folderId.toLowerCase() === folderKeyNorm ||
+          slugifyFolderName(dbf.folderId) === folderKeyNorm ||
+          (folder &&
+            (dbf.folderId.toLowerCase() === folder.name.toLowerCase() ||
+              slugifyFolderName(dbf.folderId) === slugifyFolderName(folder.name)))
+        ) {
+          if (!fileMap.has(dbf.name)) {
+            totalBytes += dbf.size || 0;
+            fileMap.set(dbf.name, {
+              name: dbf.name,
+              size: dbf.size || 0,
+              sizeFormatted: dbf.sizeFormatted || formatBytes(dbf.size || 0),
+              mtime: dbf.updatedAt || dbf.createdAt || new Date().toISOString(),
+              ext: dbf.ext || path.extname(dbf.name).replace(".", "").toUpperCase() || "FILE",
+              category: dbf.category || getFileCategory(path.extname(dbf.name).toLowerCase()),
+              isShared: !!(
+                Array.isArray(folder?.sharedFiles) &&
+                folder.sharedFiles.some((sf) => sf.toLowerCase() === dbf.name.toLowerCase())
+              ),
+              url: dbf.catboxUrl || `/drive-files/${encodeURIComponent(folderKey)}/${encodeURIComponent(dbf.name)}`,
+              downloadUrl: `/api/drive/download?folder=${encodeURIComponent(folderKey)}&file=${encodeURIComponent(dbf.name)}`,
+              catboxUrl: dbf.catboxUrl || "",
+              backupStatus: dbf.catboxUrl ? "both_active" : "local_only",
+              isGithub: false,
+            });
+          }
+        }
+      }
+
+      // Attach Catbox URLs and prefer Catbox URL for display
+      for (const [name, item] of fileMap.entries()) {
+        const match = dbFiles.find(
+          (f) =>
+            (f.folderId.toLowerCase() === folderKeyNorm ||
+              slugifyFolderName(f.folderId) === folderKeyNorm ||
+              (folder &&
+                (f.folderId.toLowerCase() === folder.name.toLowerCase() ||
+                  slugifyFolderName(f.folderId) === slugifyFolderName(folder.name)))) &&
+            f.name.toLowerCase() === name.toLowerCase()
+        );
+        if (match) {
+          item.catboxUrl = match.catboxUrl || "";
+          item.backupStatus = match.backupStatus || (match.catboxUrl ? "both_active" : "local_only");
+          if (match.catboxUrl) {
+            item.url = match.catboxUrl;
+          }
+        } else {
+          item.catboxUrl = "";
+          item.backupStatus = "local_only";
+        }
+      }
+    } catch (dbErr) {
+      console.warn("DB enrichment warning:", dbErr);
+    }
+
     let images = Array.from(fileMap.values());
     const filteredRequestedFile = (req.query.file as string)?.trim();
     if (filteredRequestedFile) {
@@ -2071,8 +2588,8 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
           encodeURIComponent(img.name).toLowerCase() === filteredRequestedFile.toLowerCase()
       );
       totalBytes = images.reduce((acc, cur) => acc + (cur.size || 0), 0);
-    } else if (!isAdmin && !folder?.isShared) {
-      // If folder is private, guest only sees specifically shared files
+    } else if (!isAdmin && (req.query.share || (folder && folder.shareToken === folderKey))) {
+      // Khi truy cập qua link chia sẻ công khai: Khách CHỈ xem được các tệp đã được Admin bật chia sẻ!
       images = images.filter((img) => img.isShared === true);
       totalBytes = images.reduce((acc, cur) => acc + (cur.size || 0), 0);
     }
@@ -2096,7 +2613,7 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
   }
 });
 
-// 7. Download File (with strict access control)
+// 7. Download File (with access control & Catbox fallback)
 app.get("/api/drive/download", async (req: Request, res: Response) => {
   try {
     const filename = req.query.file as string;
@@ -2114,26 +2631,63 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
       folder.sharedFiles.some((f) => f.toLowerCase() === filename.toLowerCase())
     );
 
-    // STRICT ACCESS CONTROL
-    if (!isAdmin) {
-      if (!folder || (!folder.isShared && !isFileSpecificallyShared)) {
-        return res.status(403).send("Truy cập bị từ chối: Tệp này chưa được chia sẻ.");
-      }
-      if (folder.allowDownload === false) {
-        return res.status(403).send("Thư mục này không cho phép tải xuống.");
+    // ACCESS CONTROL:
+    // 1. If folder explicitly disables download and requester is not admin
+    if (folder && folder.allowDownload === false && !isAdmin) {
+      return res.status(403).send("Thư mục này không cho phép tải xuống.");
+    }
+
+    // 2. If accessing via a guest share token/link and neither folder nor file is shared
+    if (req.query.share && !isAdmin) {
+      if (!folder?.isShared && !isFileSpecificallyShared) {
+        return res.status(403).send("Truy cập bị từ chối: Tệp này chưa được Quản trị viên chia sẻ.");
       }
     }
 
     const safeName = path.basename(filename);
+
+    // Step 1: Check folder's resolved local directories
     for (const dir of localDirs) {
       const targetPath = path.join(dir, safeName);
       if (fs.existsSync(targetPath)) {
         return res.download(targetPath, safeName);
       }
+      if (fs.existsSync(dir)) {
+        try {
+          const filesInDir = fs.readdirSync(dir);
+          const matched = filesInDir.find((f) => f.toLowerCase() === safeName.toLowerCase());
+          if (matched) {
+            return res.download(path.join(dir, matched), safeName);
+          }
+        } catch (e) {}
+      }
     }
 
-    // Direct check public and dist
+    // Step 2: Check all subdirectories of drive/
+    const driveRootDir = path.join(process.cwd(), "drive");
+    if (fs.existsSync(driveRootDir)) {
+      try {
+        const subdirs = fs.readdirSync(driveRootDir);
+        for (const sub of subdirs) {
+          const subPath = path.join(driveRootDir, sub);
+          if (fs.statSync(subPath).isDirectory()) {
+            const candidate = path.join(subPath, safeName);
+            if (fs.existsSync(candidate)) {
+              return res.download(candidate, safeName);
+            }
+            const subFiles = fs.readdirSync(subPath);
+            const found = subFiles.find((f) => f.toLowerCase() === safeName.toLowerCase());
+            if (found) {
+              return res.download(path.join(subPath, found), safeName);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Step 3: Direct check public and dist
     const directPaths = [
+      path.join(process.cwd(), "drive", safeName),
       path.join(process.cwd(), "public", "img", safeName),
       path.join(process.cwd(), "public", "fme-ctut", safeName),
       path.join(process.cwd(), "public", "drive", safeName),
@@ -2147,14 +2701,50 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
       }
     }
 
-    return res.status(404).send("Không tìm thấy tệp ảnh");
+    // Step 4: If local file is not found, check Neon DB for Catbox backup link to auto-restore!
+    try {
+      const dbFiles = await getStoredDriveFiles();
+      const folderKeyNorm = (folder ? folder.id : folderKey).toLowerCase();
+      const match =
+        dbFiles.find(
+          (f) =>
+            (f.folderId.toLowerCase() === folderKeyNorm ||
+              slugifyFolderName(f.folderId) === folderKeyNorm ||
+              (folder &&
+                (f.folderId.toLowerCase() === folder.name.toLowerCase() ||
+                  slugifyFolderName(f.folderId) === slugifyFolderName(folder.name)))) &&
+            f.name.toLowerCase() === safeName.toLowerCase()
+        ) || dbFiles.find((f) => f.name.toLowerCase() === safeName.toLowerCase());
+
+      if (match && match.catboxUrl) {
+        console.log(`[Download Stream] Streaming from Catbox: ${match.catboxUrl}`);
+        try {
+          const cbRes = await fetch(match.catboxUrl);
+          if (cbRes.ok) {
+            const arrayBuf = await cbRes.arrayBuffer();
+            const buf = Buffer.from(arrayBuf);
+            res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeName)}"`);
+            res.setHeader("Content-Type", cbRes.headers.get("content-type") || "application/octet-stream");
+            res.setHeader("Content-Length", buf.length.toString());
+            return res.end(buf);
+          }
+        } catch (fetchErr) {
+          console.warn("[Download Catbox Fetch Error]:", fetchErr);
+        }
+        return res.redirect(match.catboxUrl);
+      }
+    } catch (e) {
+      console.warn("Auto-restore download error:", e);
+    }
+
+    return res.status(404).send("Không tìm thấy tệp để tải xuống");
   } catch (error: any) {
     console.error("Lỗi tải tệp:", error);
     return res.status(500).send("Lỗi tải tệp: " + error.message);
   }
 });
 
-// 8. Upload File to Folder
+// 8. Upload File to Folder (Dual Storage: Local + Catbox.moe + DB)
 app.post("/api/drive/upload", async (req: Request, res: Response) => {
   try {
     const { folder, filename, base64 } = req.body;
@@ -2169,14 +2759,52 @@ app.post("/api/drive/upload", async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Định dạng tệp không được hỗ trợ" });
     }
 
-    const cleanBase64 = base64.replace(/^data:image\/\w+;base64,/, "");
+    // Ensure folder exists in DB metadata and filesystem; if not, auto-create it (e.g. folder KTS)
+    try {
+      const storedFolders = await getStoredFolders();
+      const folderExists = storedFolders.some(
+        (f) =>
+          String(f.id).toLowerCase() === folderId.toLowerCase() ||
+          f.folder?.toLowerCase() === folderId.toLowerCase() ||
+          f.name.toLowerCase() === folderId.toLowerCase() ||
+          slugifyFolderName(String(f.id)) === slugifyFolderName(folderId) ||
+          slugifyFolderName(f.name) === slugifyFolderName(folderId)
+      );
+
+      if (!folderExists) {
+        const now = new Date().toISOString();
+        const slugged = slugifyFolderName(folderId);
+        const newFolderMeta: DriveFolderMeta = {
+          id: slugged || folderId,
+          name: folderId,
+          folder: folderId,
+          description: `Thư mục ${folderId}`,
+          isShared: false,
+          shareToken: `${slugged}-auto-${Date.now().toString(36)}`,
+          hasPassword: false,
+          allowEdit: false,
+          allowDownload: true,
+          sharedFiles: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+        storedFolders.push(newFolderMeta);
+        await saveStoredFolders(storedFolders);
+        console.log(`[Auto-create Folder] Created folder "${folderId}" in DB metadata.`);
+      }
+
+    } catch (errDir) {
+      console.warn("Folder check/create warning:", errDir);
+    }
+
+    const cleanBase64 = typeof base64 === "string" && base64.includes(",") ? base64.split(",")[1] : base64;
     const token = getEffectiveGithubToken(req);
-    const { githubPath, localDirs } = resolveFolderPaths(folderId);
+    const { githubPath } = resolveFolderPaths(folderId);
 
     let githubCommitted = false;
     let githubCommitUrl = "";
 
-    // Commit to GitHub if token available
+    // Optional Commit to GitHub if token available
     if (token) {
       let sha: string | undefined = undefined;
       try {
@@ -2196,61 +2824,86 @@ app.post("/api/drive/upload", async (req: Request, res: Response) => {
         }
       } catch (e) {}
 
-      const ghPutRes = await fetch(
-        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github.v3+json",
-            "Content-Type": "application/json",
-            "User-Agent": "Drive-App",
-          },
-          body: JSON.stringify({
-            message: `Upload ${safeName} to ${folderId} via Drive`,
-            content: cleanBase64,
-            branch: GITHUB_BRANCH,
-            ...(sha ? { sha } : {}),
-          }),
-        }
-      );
+      try {
+        const ghPutRes = await fetch(
+          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "Content-Type": "application/json",
+              "User-Agent": "Drive-App",
+            },
+            body: JSON.stringify({
+              message: `Upload ${safeName} to ${folderId} via Drive`,
+              content: cleanBase64,
+              branch: GITHUB_BRANCH,
+              ...(sha ? { sha } : {}),
+            }),
+          }
+        );
 
-      if (ghPutRes.ok) {
-        const ghData = await ghPutRes.json();
-        githubCommitted = true;
-        githubCommitUrl = ghData.commit?.html_url || "";
-      } else {
-        const errJson = await ghPutRes.json().catch(() => ({}));
-        return res.status(ghPutRes.status).json({
-          success: false,
-          message: "Lỗi GitHub: " + (errJson.message || "Không thể commit lên repo"),
-        });
+        if (ghPutRes.ok) {
+          const ghData = await ghPutRes.json();
+          githubCommitted = true;
+          githubCommitUrl = ghData.commit?.html_url || "";
+        }
+      } catch (ghErr) {
+        console.warn("GitHub commit warning:", ghErr);
       }
     }
 
-    // Write locally
     const buffer = Buffer.from(cleanBase64, "base64");
+
+    // 1. Upload directly to Catbox.moe (KHÔNG lưu local vào dự án)
+    let catboxUrl = "";
     try {
-      for (const d of localDirs) {
-        if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-        fs.writeFileSync(path.join(d, safeName), buffer);
-      }
-    } catch (e) {}
+      catboxUrl = await uploadToCatbox(buffer, safeName);
+      console.log(`[Catbox Upload Success] ${safeName} -> ${catboxUrl}`);
+    } catch (cbErr: any) {
+      console.error("Catbox upload error:", cbErr.message);
+      return res.status(500).json({
+        success: false,
+        message: `Lỗi tải tệp lên Catbox.moe: ${cbErr.message}`,
+      });
+    }
+
+    if (!catboxUrl) {
+      return res.status(500).json({
+        success: false,
+        message: "Không nhận được liên kết tải lên từ Catbox.moe",
+      });
+    }
+
+    // 2. Lưu liên kết Catbox và thông tin tệp vào Cơ sở dữ liệu (Neon Postgres DB)
+    const fileRecord = await upsertDriveFileRecord({
+      folderId,
+      name: safeName,
+      size: buffer.length,
+      sizeFormatted: formatBytes(buffer.length),
+      ext: ext.replace(".", "").toUpperCase(),
+      localUrl: catboxUrl,
+      catboxUrl,
+      backupStatus: "both_active",
+    });
 
     return res.json({
       success: true,
-      message: githubCommitted
-        ? `Đã commit thành công lên GitHub (${GITHUB_OWNER}/${GITHUB_REPO})!`
-        : "Đã tải lên máy chủ thành công.",
+      message: `Đã tải tệp lên Catbox.moe và lưu vào cơ sở dữ liệu thành công!`,
       githubCommitted,
       githubCommitUrl,
       file: {
+        id: fileRecord.id,
         name: safeName,
         size: buffer.length,
         sizeFormatted: formatBytes(buffer.length),
         ext: ext.replace(".", "").toUpperCase(),
-        url: `/${githubPath.replace(/^public\//, "")}/${encodeURIComponent(safeName)}`,
+        url: catboxUrl,
+        catboxUrl: catboxUrl,
         downloadUrl: `/api/drive/download?folder=${encodeURIComponent(folderId)}&file=${encodeURIComponent(safeName)}`,
+        backupStatus: fileRecord.backupStatus,
+        createdAt: fileRecord.createdAt,
       },
     });
   } catch (error: any) {
@@ -2259,80 +2912,168 @@ app.post("/api/drive/upload", async (req: Request, res: Response) => {
   }
 });
 
-// 9. Delete File from Folder
+// 8.1. Health Check & Auto-Backup Sync (Repairs 404 on either link)
+app.post("/api/drive/sync-backup", async (req: Request, res: Response) => {
+  try {
+    const { folder, file } = req.body || {};
+    const allFiles = await getStoredDriveFiles();
+    let targets = allFiles;
+    if (folder) {
+      targets = targets.filter(
+        (f) => f.folderId === folder || slugifyFolderName(f.folderId) === folder
+      );
+    }
+    if (file) {
+      targets = targets.filter((f) => f.name.toLowerCase() === file.toLowerCase());
+    }
+
+    const results = [];
+    let localRestoredCount = 0;
+    let catboxRestoredCount = 0;
+    let healthyCount = 0;
+
+    for (const rec of targets) {
+      const { record: updated, action } = await syncAndRepairFile(rec);
+      if (action === "restored_local_from_catbox") localRestoredCount++;
+      else if (action === "restored_catbox_from_local") catboxRestoredCount++;
+      else if (action === "both_healthy") healthyCount++;
+      results.push({ record: updated, action });
+    }
+
+    return res.json({
+      success: true,
+      message: `Đã kiểm tra ${targets.length} tệp. (Khỏe: ${healthyCount}, Khôi phục Local từ Catbox: ${localRestoredCount}, Khôi phục Catbox từ Local: ${catboxRestoredCount})`,
+      stats: {
+        total: targets.length,
+        healthy: healthyCount,
+        localRestored: localRestoredCount,
+        catboxRestored: catboxRestoredCount,
+      },
+      data: results,
+    });
+  } catch (error: any) {
+    console.error("Lỗi sync backup:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 8.2. Get All Drive Files from DB
+app.get("/api/drive/db-files", async (req: Request, res: Response) => {
+  try {
+    const files = await getStoredDriveFiles();
+    return res.json({ success: true, count: files.length, data: files });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 9. Delete File from Folder (Catbox & Local allowed; GitHub protected)
 app.delete("/api/drive/delete", async (req: Request, res: Response) => {
   try {
-    const filename = (req.body?.filename || req.query?.file) as string;
+    const filename = (req.body?.filename || req.body?.fileName || req.body?.file || req.query?.file) as string;
     const folderId = (req.body?.folder || req.query?.folder || "fme-ctut") as string;
-    const providedSha = req.body?.sha as string | undefined;
+    const isGithub = Boolean(req.body?.isGithub || req.query?.isGithub);
 
     if (!filename || typeof filename !== "string") {
       return res.status(400).json({ success: false, message: "Thiếu tên tệp cần xóa" });
     }
 
     const safeName = path.basename(filename);
-    const token = getEffectiveGithubToken(req);
-    const { githubPath, localDirs } = resolveFolderPaths(folderId);
 
-    let githubDeleted = false;
-
-    if (token) {
-      let sha = providedSha;
-      if (!sha) {
-        const checkRes = await fetch(
-          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}?ref=${GITHUB_BRANCH}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/vnd.github.v3+json",
-              "User-Agent": "Drive-App",
-            },
-          }
-        );
-        if (checkRes.ok) {
-          const item = await checkRes.json();
-          sha = item.sha;
-        }
-      }
-
-      if (sha) {
-        const ghDelRes = await fetch(
-          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${githubPath}/${encodeURIComponent(safeName)}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/vnd.github.v3+json",
-              "Content-Type": "application/json",
-              "User-Agent": "Drive-App",
-            },
-            body: JSON.stringify({
-              message: `Delete ${safeName} from ${folderId} via Drive`,
-              sha,
-              branch: GITHUB_BRANCH,
-            }),
-          }
-        );
-
-        if (ghDelRes.ok) {
-          githubDeleted = true;
-        }
-      }
+    // 1. STRICT POLICY: Tệp lưu trên GitHub KHÔNG ĐƯỢC PHÉP XÓA!
+    if (isGithub) {
+      return res.status(403).json({
+        success: false,
+        message: "Tệp lưu trữ trên GitHub được bảo vệ vĩnh viễn, không thể xóa!",
+      });
     }
 
-    for (const d of localDirs) {
+    // 2. Xóa khỏi Catbox.moe nếu tệp có liên kết Catbox
+    let catboxDeleted = false;
+    try {
+      const allDbFiles = await getStoredDriveFiles();
+      const match = allDbFiles.find(
+        (f) =>
+          (f.folderId.toLowerCase() === folderId.toLowerCase() ||
+           slugifyFolderName(f.folderId) === slugifyFolderName(folderId)) &&
+          f.name.toLowerCase() === safeName.toLowerCase()
+      );
+      if (match && match.catboxUrl) {
+        catboxDeleted = await deleteFromCatbox(match.catboxUrl);
+      }
+      // Xóa bản ghi trong Neon DB drive_files_db
+      const remainingFiles = allDbFiles.filter(
+        (f) => !(
+          (f.folderId.toLowerCase() === folderId.toLowerCase() ||
+           slugifyFolderName(f.folderId) === slugifyFolderName(folderId)) &&
+          f.name.toLowerCase() === safeName.toLowerCase()
+        )
+      );
+      await saveStoredDriveFiles(remainingFiles);
+    } catch (e: any) {
+      console.warn("DB / Catbox remove warning:", e.message);
+    }
+
+    // 3. Xóa tệp khỏi bộ nhớ máy chủ Local (kiểm tra tất cả thư mục có thể)
+    const { localDirs } = resolveFolderPaths(folderId);
+    let resolvedDirs: string[] = [];
+    try {
+      const res = await resolveFolder(folderId);
+      resolvedDirs = res.localDirs;
+    } catch {}
+    const allDirsToCheck = new Set([...localDirs, ...resolvedDirs]);
+    let localDeleted = false;
+    for (const d of allDirsToCheck) {
       const p = path.join(d, safeName);
       if (fs.existsSync(p)) {
         try {
           fs.unlinkSync(p);
+          localDeleted = true;
+        } catch (e) {}
+      }
+      // Kiểm tra xóa không phân biệt hoa thường
+      if (fs.existsSync(d)) {
+        try {
+          const files = fs.readdirSync(d);
+          for (const f of files) {
+            if (f.toLowerCase() === safeName.toLowerCase()) {
+              try {
+                fs.unlinkSync(path.join(d, f));
+                localDeleted = true;
+              } catch (e) {}
+            }
+          }
         } catch (e) {}
       }
     }
 
+    // Cũng kiểm tra thư mục gốc drive/<folderId>
+    const directPath = path.join(process.cwd(), "drive", folderId, safeName);
+    if (fs.existsSync(directPath)) {
+      try {
+        fs.unlinkSync(directPath);
+        localDeleted = true;
+      } catch (e) {}
+    }
+
+    // Xóa bộ nhớ cache đếm số tệp
+    folderCountCache.clear();
+
+    // 4. Xóa tệp khỏi danh sách sharedFiles của thư mục nếu có
+    try {
+      const storedFolders = await getStoredFolders();
+      const folderMeta = storedFolders.find((f) => f.id === folderId || f.folder === folderId || f.name === folderId);
+      if (folderMeta && Array.isArray(folderMeta.sharedFiles)) {
+        folderMeta.sharedFiles = folderMeta.sharedFiles.filter((sf) => sf.toLowerCase() !== safeName.toLowerCase());
+        await saveStoredFolders(storedFolders);
+      }
+    } catch (e) {}
+
     return res.json({
       success: true,
-      message: githubDeleted ? `Đã tạo commit xóa tệp ${safeName} trên GitHub!` : `Đã xóa tệp ${safeName}.`,
-      githubDeleted,
+      message: `Đã xóa tệp "${safeName}" thành công khỏi máy chủ và Catbox.moe!`,
+      catboxDeleted,
+      localDeleted,
     });
   } catch (error: any) {
     console.error("Lỗi xóa tệp:", error);
@@ -2360,11 +3101,101 @@ app.delete("/api/fme-ctut/delete", (req: Request, res: Response) => {
   app._router.handle(req, res);
 });
 
+// ==========================================
+// API 404 & ERROR HANDLING (Guarantees JSON, NEVER HTML)
+// ==========================================
+
+app.all("/api/*", (req: Request, res: Response) => {
+  return res.status(404).json({
+    success: false,
+    message: `API endpoint ${req.method} ${req.originalUrl} không tồn tại`,
+  });
+});
+
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  if (req.originalUrl?.startsWith("/api") || req.path?.startsWith("/api")) {
+    console.error("[API Error Handler]", err);
+    return res.status(err.status || 500).json({
+      success: false,
+      message: err.message || "Lỗi xử lý yêu cầu máy chủ",
+    });
+  }
+  next(err);
+});
+
 // Static assets routing for media files inside /drive and /fme-ctut
+// Serve files from root drive/ folder via /drive-files/ URL prefix with Catbox 404 auto-heal fallback
+app.get("/drive-files/:folder/:filename", async (req: Request, res: Response, next: NextFunction) => {
+  const folder = req.params.folder;
+  const filename = path.basename(req.params.filename);
+
+  // 1. Kiểm tra trong tất cả thư mục ứng viên của folder này
+  try {
+    const { localDirs } = await resolveFolder(folder);
+    const pathsToCheck = new Set<string>();
+    for (const d of localDirs) {
+      pathsToCheck.add(path.join(d, filename));
+    }
+    pathsToCheck.add(path.join(process.cwd(), "drive", folder, filename));
+    pathsToCheck.add(path.join(process.cwd(), "drive", slugifyFolderName(folder), filename));
+    pathsToCheck.add(path.join(process.cwd(), "public", "drive", folder, filename));
+    if (folder.toLowerCase() === "1" || folder.toLowerCase() === "img") {
+      pathsToCheck.add(path.join(process.cwd(), "public", "img", filename));
+    }
+
+    for (const p of pathsToCheck) {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+        return res.sendFile(p);
+      }
+    }
+
+    // Kiểm tra không phân biệt hoa thường
+    for (const d of localDirs) {
+      if (fs.existsSync(d)) {
+        try {
+          const files = fs.readdirSync(d);
+          const match = files.find((f) => f.toLowerCase() === filename.toLowerCase());
+          if (match) {
+            const matchedPath = path.join(d, match);
+            if (fs.statSync(matchedPath).isFile()) {
+              return res.sendFile(matchedPath);
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch (errDir) {
+    console.warn("Resolve local file warning:", errDir);
+  }
+
+  // 2. Nếu tệp cục bộ chưa có (404), tự động lấy từ Catbox.moe qua Neon DB
+  try {
+    const dbFiles = await getStoredDriveFiles();
+    const match = dbFiles.find(
+      (f) =>
+        (f.folderId.toLowerCase() === folder.toLowerCase() ||
+         slugifyFolderName(f.folderId) === slugifyFolderName(folder)) &&
+        f.name.toLowerCase() === filename.toLowerCase()
+    );
+    if (match && match.catboxUrl) {
+      return res.redirect(302, match.catboxUrl);
+    }
+  } catch (e) {
+    console.warn("Static auto-restore error:", e);
+  }
+
+  next();
+});
+
+app.use("/drive-files", express.static(path.join(process.cwd(), "drive")));
+
 app.use("/drive", (req: Request, res: Response, next: NextFunction) => {
   // Only serve static media files that have extensions (jpg, png, webp, etc.)
   if (req.path.includes(".") && !req.path.endsWith(".html")) {
-    return express.static(path.join(process.cwd(), "public", "drive"))(req, res, next);
+    // Try root drive/ first, then public/drive/
+    return express.static(path.join(process.cwd(), "drive"))(req, res, () => {
+      express.static(path.join(process.cwd(), "public", "drive"))(req, res, next);
+    });
   }
   // Let SPA / Vite handle page routes (/drive, /drive?share=..., etc.)
   next();

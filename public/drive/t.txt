@@ -1,6 +1,0 @@
-
- load nằm ở trang này lâu quá tối ưu hiện popup file fpd,docx,.. hiện nhiều nhất trên màn hình giao diện nhìn dễ dùng nhất có thể
-fodler img nằm trong folder drive
-
-
-lưu file ngoài thư mục public để ko thể xem ffileanhr qua đường dẫn được ko, chỉ qua share ms đc 

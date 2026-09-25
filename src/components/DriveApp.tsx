@@ -43,7 +43,15 @@ import {
   File,
   ExternalLink,
   Eye,
+  Upload,
+  CheckCircle2,
+  Trash2,
+  FolderPlus,
+  Plus,
+  AlertTriangle,
+  MoreVertical,
 } from "lucide-react";
+import DriveUploadStation from "./DriveUploadStation";
 
 export interface DriveFolder {
   id: string;
@@ -73,6 +81,7 @@ export type FileCategory =
   | "file";
 
 export interface DriveFile {
+  id?: string;
   name: string;
   size: number;
   sizeFormatted: string;
@@ -81,7 +90,9 @@ export interface DriveFile {
   category?: FileCategory;
   isShared?: boolean;
   url: string;
+  catboxUrl?: string;
   downloadUrl: string;
+  backupStatus?: "both_active" | "local_restored" | "catbox_restored" | "catbox_failed" | "local_only";
   isGithub?: boolean;
 }
 
@@ -103,6 +114,15 @@ export function getFileCategory(file: { name: string; ext?: string; category?: s
   }
   if (["zip", "rar", "7z", "tar", "gz", "bz2"].includes(ext)) return "archive";
   return "file";
+}
+
+function formatBytes(bytes: number, decimals = 1): string {
+  if (!bytes || bytes === 0) return "0 B";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
 function getCardBackground(cat: FileCategory) {
@@ -337,6 +357,67 @@ export default function DriveApp() {
   const [fileShareCopied, setFileShareCopied] = useState<string | null>(null);
   const [fileShareToggling, setFileShareToggling] = useState(false);
 
+  // Folder Creation Modal states
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderDesc, setNewFolderDesc] = useState("");
+  const [newFolderIsShared, setNewFolderIsShared] = useState(false);
+  const [newFolderAllowDownload, setNewFolderAllowDownload] = useState(true);
+  const [newFolderPassword, setNewFolderPassword] = useState("");
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+
+  // Folder Deletion Modal states
+  const [showDeleteFolderModal, setShowDeleteFolderModal] = useState(false);
+  const [folderToDelete, setFolderToDelete] = useState<DriveFolder | null>(null);
+  const [isDeletingFolder, setIsDeletingFolder] = useState(false);
+
+  // File Deletion Modal states
+  const [showDeleteFileModal, setShowDeleteFileModal] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<DriveFile | null>(null);
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
+
+  // Context Menu & Mobile Action Sheet states (PC right-click & Mobile 3-dots)
+  const [contextMenu, setContextMenu] = useState<{
+    file: DriveFile;
+    x: number;
+    y: number;
+    isMobileSheet?: boolean;
+  } | null>(null);
+
+  // Close context menu on global click, scroll or Escape key
+  useEffect(() => {
+    const handleClose = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("click", handleClose);
+    window.addEventListener("scroll", handleClose, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("click", handleClose);
+      window.removeEventListener("scroll", handleClose, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  // Quick Direct Upload to Current Folder states
+  const quickFileInputRef = useRef<HTMLInputElement>(null);
+  const [quickUploadOpen, setQuickUploadOpen] = useState(false);
+  const [quickUploadTargetFolder, setQuickUploadTargetFolder] = useState<DriveFolder | null>(null);
+  const [isDraggingOverFolder, setIsDraggingOverFolder] = useState(false);
+  const [isQuickUploading, setIsQuickUploading] = useState(false);
+  const [quickUploadList, setQuickUploadList] = useState<
+    Array<{
+      name: string;
+      size: number;
+      status: "uploading" | "success" | "error";
+      progress: string;
+      catboxUrl?: string;
+      localUrl?: string;
+      error?: string;
+    }>
+  >([]);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<any>(null);
 
@@ -349,6 +430,31 @@ export default function DriveApp() {
   }, []);
 
   const isAdmin = useMemo(() => !!adminToken, [adminToken]);
+
+  // Active View Tab: "files" | "upload"
+  const isInitialUpload = typeof window !== "undefined" && window.location.pathname === "/drive/upload";
+  const [activeTab, setActiveTab] = useState<"files" | "upload">(isInitialUpload ? "upload" : "files");
+
+  const switchTab = useCallback((tab: "files" | "upload", targetFolderId?: string) => {
+    setActiveTab(tab);
+    if (tab === "upload") {
+      window.history.pushState(null, "", "/drive/upload");
+    } else {
+      if (targetFolderId) {
+        const found = folders.find((f) => f.id === targetFolderId || f.folder === targetFolderId);
+        if (found) setActiveFolder(found);
+      }
+      window.history.pushState(null, "", "/drive");
+    }
+  }, [folders]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveTab(window.location.pathname === "/drive/upload" ? "upload" : "files");
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   // Sync theme
   useEffect(() => {
@@ -387,6 +493,10 @@ export default function DriveApp() {
       if (params.toString()) apiUrl += `?${params.toString()}`;
 
       const res = await fetch(apiUrl, { headers: authHeaders() });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`Máy chủ chưa sẵn sàng (${res.status}). Vui lòng khởi động lại server hoặc thử lại.`);
+      }
       const data = await res.json();
 
       if (!res.ok || !data.success) {
@@ -446,6 +556,10 @@ export default function DriveApp() {
       const res = await fetch(apiUrl, {
         headers: authHeaders(),
       });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`Máy chủ chưa sẵn sàng (${res.status}). Vui lòng thử lại sau giây lát.`);
+      }
       const data = await res.json();
       if (!res.ok || !data.success) {
         if (res.status === 403) {
@@ -473,6 +587,104 @@ export default function DriveApp() {
       setLoadingFiles(false);
     }
   }, [authHeaders, showToast]);
+
+  // Convert file to base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Direct Upload to Current Folder in /drive without navigating to /drive/upload
+  const uploadFilesDirectly = async (filesList: FileList | File[], targetFolder?: DriveFolder | null) => {
+    const destinationFolder = targetFolder || activeFolder || folders[0];
+    if (!destinationFolder) {
+      showToast("Vui lòng chọn một thư mục để tải lên!");
+      return;
+    }
+
+    if (!filesList || filesList.length === 0) return;
+    const filesArray = Array.from(filesList);
+    const targetFolderKey = destinationFolder.folder || destinationFolder.name || destinationFolder.id;
+
+    setQuickUploadTargetFolder(destinationFolder);
+    setQuickUploadOpen(true);
+    setIsQuickUploading(true);
+
+    const initialItems = filesArray.map((f) => ({
+      name: f.name,
+      size: f.size,
+      status: "uploading" as const,
+      progress: "Đang nạp file & gửi Catbox.moe...",
+    }));
+    setQuickUploadList(initialItems);
+
+    let successCount = 0;
+    for (let i = 0; i < filesArray.length; i++) {
+      const file = filesArray[i];
+      try {
+        const base64Data = await fileToBase64(file);
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
+
+        const res = await fetch("/api/drive/upload", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            folder: targetFolderKey,
+            filename: file.name,
+            base64: base64Data,
+          }),
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          const txt = await res.text().catch(() => "");
+          throw new Error(txt.slice(0, 100) || `Lỗi máy chủ (${res.status})`);
+        }
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Tải lên thất bại");
+        }
+
+        successCount++;
+        setQuickUploadList((prev) =>
+          prev.map((item, idx) =>
+            idx === i
+              ? {
+                  ...item,
+                  status: "success",
+                  progress: data.file?.catboxUrl ? "Đã lưu Local & Catbox.moe!" : "Đã lưu máy chủ Local!",
+                  catboxUrl: data.file?.catboxUrl,
+                  localUrl: data.file?.url,
+                }
+              : item
+          )
+        );
+      } catch (err: any) {
+        setQuickUploadList((prev) =>
+          prev.map((item, idx) =>
+            idx === i
+              ? {
+                  ...item,
+                  status: "error",
+                  progress: "Lỗi tải lên",
+                  error: err.message || "Lỗi không xác định",
+                }
+              : item
+          )
+        );
+      }
+    }
+
+    setIsQuickUploading(false);
+    showToast(`Đã tải lên ${successCount}/${filesArray.length} tệp vào "${destinationFolder.name}"!`);
+    fetchFiles(destinationFolder);
+    fetchFolders();
+  };
 
   useEffect(() => {
     fetchFolders();
@@ -597,6 +809,116 @@ export default function DriveApp() {
       showToast(err.message || "Lỗi cập nhật chia sẻ tệp");
     } finally {
       setFileShareToggling(false);
+    }
+  };
+
+  // Create New Folder Handler
+  const handleCreateFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFolderName.trim()) {
+      showToast("Vui lòng nhập tên thư mục!");
+      return;
+    }
+    setIsCreatingFolder(true);
+    try {
+      const res = await fetch("/api/drive/folders", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          name: newFolderName.trim(),
+          description: newFolderDesc.trim(),
+          isShared: newFolderIsShared,
+          allowDownload: newFolderAllowDownload,
+          password: newFolderPassword.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Tạo thư mục thất bại");
+      }
+      showToast(`Đã tạo thư mục "${newFolderName.trim()}" thành công!`);
+      setShowCreateFolderModal(false);
+      setNewFolderName("");
+      setNewFolderDesc("");
+      setNewFolderPassword("");
+      setNewFolderIsShared(false);
+      setNewFolderAllowDownload(true);
+      await fetchFolders();
+      if (data.data) {
+        setActiveFolder(data.data);
+      }
+    } catch (err: any) {
+      showToast(err.message || "Lỗi tạo thư mục");
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  };
+
+  // Delete Folder Handler
+  const handleDeleteFolder = async () => {
+    if (!folderToDelete) return;
+    if (folderToDelete.id === "1" || folderToDelete.id === "img") {
+      showToast("Không thể xóa thư mục gốc hệ thống!");
+      return;
+    }
+    setIsDeletingFolder(true);
+    try {
+      const res = await fetch(`/api/drive/folders/${encodeURIComponent(folderToDelete.id)}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Xóa thư mục thất bại");
+      }
+      showToast(`Đã xóa thư mục "${folderToDelete.name}" thành công!`);
+      setShowDeleteFolderModal(false);
+      setFolderToDelete(null);
+      setActiveFolder(null);
+      await fetchFolders();
+    } catch (err: any) {
+      showToast(err.message || "Lỗi xóa thư mục");
+    } finally {
+      setIsDeletingFolder(false);
+    }
+  };
+
+  // Delete File Handler (Catbox & Local allowed; GitHub strictly protected)
+  const handleDeleteFile = async () => {
+    if (!fileToDelete || !activeFolder) return;
+    if (fileToDelete.isGithub) {
+      showToast("Tệp lưu trên GitHub được bảo vệ vĩnh viễn, không thể xóa!");
+      return;
+    }
+    setIsDeletingFile(true);
+    try {
+      const res = await fetch("/api/drive/delete", {
+        method: "DELETE",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          filename: fileToDelete.name,
+          folder: activeFolder.id,
+          isGithub: false,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Xóa tệp thất bại");
+      }
+      showToast(`Đã xóa tệp "${fileToDelete.name}" thành công khỏi máy chủ và Catbox!`);
+      const deletedName = fileToDelete.name;
+      setShowDeleteFileModal(false);
+      setFileToDelete(null);
+      if (lightboxIndex !== null) {
+        closeLightbox();
+      }
+      setFiles((prev) => prev.filter((f) => f.name.toLowerCase() !== deletedName.toLowerCase()));
+      fetchFiles(activeFolder);
+      fetchFolders();
+    } catch (err: any) {
+      showToast(err.message || "Lỗi xóa tệp");
+    } finally {
+      setIsDeletingFile(false);
     }
   };
 
@@ -854,6 +1176,35 @@ export default function DriveApp() {
 
         {/* Right Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Mode Switcher: Kho Tệp vs Tải Lên Dual-Backup */}
+          <div className="flex items-center gap-1 bg-gray-900/90 p-1 rounded-xl border border-gray-800 shrink-0">
+            <button
+              onClick={() => switchTab("files")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === "files"
+                  ? "bg-cyan-500 text-black shadow-sm"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <Folder className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Kho Tệp</span>
+            </button>
+            <button
+              onClick={() => {
+                if (activeFolder) {
+                  quickFileInputRef.current?.click();
+                } else {
+                  switchTab("upload");
+                }
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer bg-gradient-to-r from-pink-600/90 to-cyan-600/90 hover:from-pink-500 hover:to-cyan-500 text-white shadow-sm shadow-pink-500/20 hover:scale-105 active:scale-95"
+              title={activeFolder ? `Tải lên tệp trực tiếp vào "${activeFolder.name}"` : "Tải lên tệp"}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Tải Lên{activeFolder ? ` (${activeFolder.name})` : ""}</span>
+            </button>
+          </div>
+
           {/* Theme Switcher */}
           <button
             onClick={toggleTheme}
@@ -890,41 +1241,84 @@ export default function DriveApp() {
         </div>
       </header>
 
-      {/* 2. BODY LAYOUT (SIDEBAR + MAIN CONTENT) */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* SIDEBAR FOR FOLDERS */}
-        <aside
-          className={`fixed md:static inset-y-0 left-0 z-40 w-64 sm:w-72 bg-[#0c1222] border-r border-gray-800/80 flex flex-col transition-transform duration-300 ${
-            mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-          }`}
-        >
-          {/* Sidebar Header */}
-          <div className="p-4 border-b border-gray-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-bold text-gray-200">
-              <HardDrive className="w-4 h-4 text-cyan-400" />
-              <span>Kho Lưu Trữ</span>
+      {/* 2. BODY LAYOUT (SIDEBAR + MAIN CONTENT OR UPLOAD STATION) */}
+      {activeTab === "upload" ? (
+        <DriveUploadStation
+          folders={folders}
+          activeFolder={activeFolder}
+          onFolderSelect={(f) => setActiveFolder(f)}
+          onRefreshFolders={fetchFolders}
+          onSwitchToFiles={(fId) => switchTab("files", fId)}
+          showToast={showToast}
+          theme={theme}
+          adminToken={adminToken}
+        />
+      ) : (
+        <div className="flex-1 flex overflow-hidden relative">
+          {/* SIDEBAR FOR FOLDERS */}
+          <aside
+            className={`fixed md:static inset-y-0 left-0 z-40 w-64 sm:w-72 bg-[#0c1222] border-r border-gray-800/80 flex flex-col transition-transform duration-300 ${
+              mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+            }`}
+          >
+            {/* Sidebar Header */}
+            <div className="p-4 border-b border-gray-800/80 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-bold text-gray-200">
+                <HardDrive className="w-4 h-4 text-cyan-400" />
+                <span>Kho Lưu Trữ</span>
+              </div>
+              <button
+                onClick={() => setMobileSidebarOpen(false)}
+                className="md:hidden p-1 rounded-lg text-gray-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              onClick={() => setMobileSidebarOpen(false)}
-              className="md:hidden p-1 rounded-lg text-gray-400 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
 
-          {/* Folder List */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-1">
-            <button
-              onClick={() => {
-                setActiveFolder(null);
-                setMobileSidebarOpen(false);
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer ${
-                activeFolder === null
-                  ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-sm"
-                  : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
-              }`}
-            >
+            {/* Folder List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+              {/* Action Buttons: Upload & New Folder */}
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <button
+                  onClick={() => {
+                    if (activeFolder) {
+                      quickFileInputRef.current?.click();
+                      setMobileSidebarOpen(false);
+                    } else {
+                      switchTab("upload");
+                      setMobileSidebarOpen(false);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 border border-pink-500/40 text-pink-300 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                  title="Tải tệp lên thư mục"
+                >
+                  <Upload className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                  <span>+ Tải Lên</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCreateFolderModal(true);
+                    setMobileSidebarOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/40 text-cyan-300 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                  title="Thêm thư mục mới"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>+ Thư Mục</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  setActiveFolder(null);
+                  setMobileSidebarOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer ${
+                  activeFolder === null
+                    ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-sm"
+                    : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+                }`}
+              >
               <div className="flex items-center gap-2.5 truncate">
                 <Folder className="w-4 h-4 text-cyan-400 shrink-0" />
                 <span className="truncate">Tất cả thư mục</span>
@@ -950,8 +1344,9 @@ export default function DriveApp() {
             ) : (
               folders.map((folder) => {
                 const isActive = activeFolder?.id === folder.id;
+                const canDeleteFolder = folder.id !== "1" && folder.id !== "img";
                 return (
-                  <button
+                  <div
                     key={folder.id}
                     onClick={() => {
                       setActiveFolder(folder);
@@ -963,7 +1358,7 @@ export default function DriveApp() {
                         : "text-gray-300 hover:bg-white/5 hover:text-white"
                     }`}
                   >
-                    <div className="flex items-center gap-2.5 truncate">
+                    <div className="flex items-center gap-2.5 truncate min-w-0">
                       {folder.hasPassword ? (
                         <FolderLock className="w-4 h-4 text-amber-400 shrink-0" />
                       ) : folder.isShared ? (
@@ -975,6 +1370,20 @@ export default function DriveApp() {
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {canDeleteFolder && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFolderToDelete(folder);
+                            setShowDeleteFolderModal(true);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-all cursor-pointer"
+                          title={`Xóa thư mục "${folder.name}"`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       {folder.isShared && (
                         <span className="w-2 h-2 rounded-full bg-emerald-400" title="Đang chia sẻ công khai" />
                       )}
@@ -982,7 +1391,7 @@ export default function DriveApp() {
                         {folder.filesCount}
                       </span>
                     </div>
-                  </button>
+                  </div>
                 );
               })
             )}
@@ -1124,6 +1533,29 @@ export default function DriveApp() {
                     <Share2 className="w-3.5 h-3.5 text-cyan-400" />
                     <span>Chia sẻ Thư mục</span>
                   </button>
+
+                  {activeFolder.id !== "img" && activeFolder.id !== "1" && (
+                    <button
+                      onClick={() => {
+                        setFolderToDelete(activeFolder);
+                        setShowDeleteFolderModal(true);
+                      }}
+                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-900/60 hover:text-white hover:border-red-400 transition-all cursor-pointer shadow-sm"
+                      title={`Xóa vĩnh viễn thư mục "${activeFolder.name}"`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      <span>Xóa Thư Mục</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => quickFileInputRef.current?.click()}
+                    className="px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-pink-500/25 to-cyan-500/25 hover:from-pink-500/40 hover:to-cyan-500/40 border border-pink-500/40 text-pink-300 hover:text-white transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+                    title={`Tải tệp trực tiếp vào thư mục "${activeFolder.name}"`}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-pink-400" />
+                    <span>+ Tải Lên Tệp</span>
+                  </button>
                 </div>
 
                 {isSelectMode && filteredFiles.length > 0 && (
@@ -1176,7 +1608,39 @@ export default function DriveApp() {
           </div>
 
           {/* MAIN SCROLLABLE VIEWPORT */}
-          <div className="flex-1 overflow-y-auto p-3 sm:p-5 relative">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (activeFolder) setIsDraggingOverFolder(true);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+              setIsDraggingOverFolder(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingOverFolder(false);
+              if (activeFolder && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                uploadFilesDirectly(e.dataTransfer.files, activeFolder);
+              }
+            }}
+            className="flex-1 overflow-y-auto p-3 sm:p-5 relative"
+          >
+            {/* Drag & drop overlay indicator */}
+            {isDraggingOverFolder && activeFolder && (
+              <div className="absolute inset-0 z-30 bg-[#0c1222]/90 border-2 border-dashed border-cyan-400 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-fadeIn pointer-events-none">
+                <div className="w-16 h-16 rounded-2xl bg-cyan-500/20 border border-cyan-400 flex items-center justify-center text-cyan-300 shadow-[0_0_25px_rgba(34,211,238,0.4)] mb-3 animate-bounce">
+                  <Upload className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-bold text-white tracking-wide">
+                  THẢ TỆP VÀO ĐÂY ĐỂ TẢI LÊN
+                </h3>
+                <p className="text-xs text-cyan-300 font-mono mt-1">
+                  📁 Lưu trực tiếp vào thư mục: <strong>{activeFolder.name}</strong> (Dual-Storage: Local + Catbox.moe)
+                </p>
+              </div>
+            )}
+
             {!activeFolder && (
               <div className="space-y-4 max-w-6xl mx-auto">
                 <div className="flex items-center justify-between">
@@ -1184,37 +1648,64 @@ export default function DriveApp() {
                     <Folder className="w-5 h-5 text-cyan-400" />
                     <span>Tất cả Thư mục</span>
                   </h2>
-                  <span className="text-xs text-gray-400 font-mono">{folders.length} thư mục</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowCreateFolderModal(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5 text-black" />
+                      <span>+ Thêm Thư Mục Mới</span>
+                    </button>
+                    <span className="text-xs text-gray-400 font-mono hidden sm:inline">{folders.length} thư mục</span>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {folders.map((folder) => (
-                    <div
-                      key={folder.id}
-                      onClick={() => setActiveFolder(folder)}
-                      className="group p-5 rounded-2xl bg-gray-800/40 hover:bg-gray-800/80 border border-gray-800 hover:border-cyan-500/50 transition-all cursor-pointer shadow-lg hover:shadow-[0_0_20px_rgba(34,211,238,0.15)] flex flex-col justify-between space-y-4"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-110 transition-transform">
-                          {folder.hasPassword ? (
-                            <FolderLock className="w-6 h-6 text-amber-400" />
-                          ) : folder.isShared ? (
-                            <FolderCheck className="w-6 h-6 text-emerald-400" />
-                          ) : (
-                            <Folder className="w-6 h-6 text-cyan-400" />
-                          )}
-                        </div>
+                  {folders.map((folder) => {
+                    const canDeleteFolder = folder.id !== "1" && folder.id !== "img";
+                    return (
+                      <div
+                        key={folder.id}
+                        onClick={() => setActiveFolder(folder)}
+                        className="group p-5 rounded-2xl bg-gray-800/40 hover:bg-gray-800/80 border border-gray-800 hover:border-cyan-500/50 transition-all cursor-pointer shadow-lg hover:shadow-[0_0_20px_rgba(34,211,238,0.15)] flex flex-col justify-between space-y-4"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-110 transition-transform">
+                            {folder.hasPassword ? (
+                              <FolderLock className="w-6 h-6 text-amber-400" />
+                            ) : folder.isShared ? (
+                              <FolderCheck className="w-6 h-6 text-emerald-400" />
+                            ) : (
+                              <Folder className="w-6 h-6 text-cyan-400" />
+                            )}
+                          </div>
 
-                        {folder.isShared ? (
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                            Công khai
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-400">
-                            Riêng tư
-                          </span>
-                        )}
-                      </div>
+                          <div className="flex items-center gap-1.5">
+                            {folder.isShared ? (
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                Công khai
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gray-700/60 text-gray-400">
+                                Riêng tư
+                              </span>
+                            )}
+                            {canDeleteFolder && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFolderToDelete(folder);
+                                  setShowDeleteFolderModal(true);
+                                }}
+                                className="p-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
+                                title={`Xóa thư mục "${folder.name}"`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
 
                       <div>
                         <h3 className="font-bold text-base text-white group-hover:text-cyan-400 transition-colors">
@@ -1233,7 +1724,8 @@ export default function DriveApp() {
                         </span>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               </div>
             )}
@@ -1254,6 +1746,15 @@ export default function DriveApp() {
                         ? "Không tìm thấy tệp phù hợp với từ khóa tìm kiếm."
                         : "Thư mục hiện tại chưa có tài liệu hoặc hình ảnh nào."}
                     </p>
+                    {!searchQuery && (
+                      <button
+                        onClick={() => quickFileInputRef.current?.click()}
+                        className="mt-3 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 bg-gradient-to-r from-pink-500 to-cyan-500 hover:from-pink-400 hover:to-cyan-400 text-white shadow-lg shadow-pink-500/25 transition-all cursor-pointer hover:scale-105 active:scale-95"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>Tải lên tệp vào thư mục "{activeFolder.name}"</span>
+                      </button>
+                    )}
                   </div>
                 ) : viewMode === "grid" ? (
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-1.5 sm:gap-2.5 pb-20">
@@ -1271,6 +1772,16 @@ export default function DriveApp() {
                               openLightbox(idx);
                             }
                           }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setContextMenu({
+                              file,
+                              x: e.clientX,
+                              y: e.clientY,
+                              isMobileSheet: window.innerWidth < 640,
+                            });
+                          }}
                           className={`group relative rounded-xl overflow-hidden border transition-all cursor-pointer ${
                             isSelected
                               ? "border-cyan-400 bg-cyan-950/30 ring-2 ring-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.25)]"
@@ -1283,6 +1794,11 @@ export default function DriveApp() {
                                 src={file.url}
                                 alt={file.name}
                                 loading="lazy"
+                                onError={(e) => {
+                                  if (file.catboxUrl && (e.currentTarget as HTMLImageElement).src !== file.catboxUrl) {
+                                    (e.currentTarget as HTMLImageElement).src = file.catboxUrl;
+                                  }
+                                }}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                               />
                             ) : (
@@ -1315,17 +1831,64 @@ export default function DriveApp() {
                               <Check className="w-4 h-4 stroke-[3]" />
                             </button>
 
-                            {/* Top Right: Individual File Share Button */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShareModalFile(file);
-                              }}
-                              className="hidden sm:flex absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 hover:bg-cyan-500 text-white hover:text-black opacity-0 group-hover:opacity-100 transition-all shadow-md z-10 cursor-pointer"
-                              title="Chia sẻ tệp này"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                            </button>
+                            {/* Top Right: Badges, Actions, & 3-Dots Button (Góc trên bên phải cho Mobile & PC) */}
+                            <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
+                              {file.isGithub && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-[9px] font-mono text-emerald-300 flex items-center gap-0.5 shadow-sm"
+                                  title="Tệp lưu trữ trên GitHub được bảo vệ vĩnh viễn, không thể xóa!"
+                                >
+                                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
+                                  <span className="hidden sm:inline">GitHub</span>
+                                </span>
+                              )}
+
+                              {/* Desktop Quick Actions on hover */}
+                              <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {!file.isGithub && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFileToDelete(file);
+                                      setShowDeleteFileModal(true);
+                                    }}
+                                    className="p-1.5 rounded-lg bg-black/70 hover:bg-red-600 text-gray-300 hover:text-white transition-all shadow-md cursor-pointer"
+                                    title="Xóa tệp khỏi máy chủ và Catbox"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShareModalFile(file);
+                                  }}
+                                  className="p-1.5 rounded-lg bg-black/70 hover:bg-cyan-500 text-white hover:text-black transition-all shadow-md cursor-pointer"
+                                  title="Chia sẻ tệp này"
+                                >
+                                  <Share2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              {/* 3-Dots Button: Luôn hiện rõ trên Mobile ở góc trên phải, và hiện khi hover trên PC */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                  setContextMenu({
+                                    file,
+                                    x: rect.left,
+                                    y: rect.bottom + 6,
+                                    isMobileSheet: window.innerWidth < 640,
+                                  });
+                                }}
+                                className="p-1 sm:p-1.5 rounded-lg bg-black/75 hover:bg-gray-800 text-gray-200 hover:text-cyan-400 border border-white/10 sm:border-transparent sm:hover:border-white/10 transition-all shadow cursor-pointer sm:opacity-0 sm:group-hover:opacity-100"
+                                title="Tùy chọn tệp (Xóa, Chia sẻ, Tải về...)"
+                                aria-label="Tùy chọn tệp"
+                              >
+                                <MoreVertical className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
 
                             {/* Bottom Right: Direct Download Button */}
                             <a
@@ -1337,6 +1900,17 @@ export default function DriveApp() {
                             >
                               <Download className="w-3.5 h-3.5" />
                             </a>
+
+                            {/* Bottom Left: Catbox Dual-Backup indicator */}
+                            {file.catboxUrl && (
+                              <span
+                                className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-black/75 border border-pink-500/40 text-[9px] font-mono text-pink-300 flex items-center gap-1 z-10 shadow-sm"
+                                title={`Catbox Cloud: ${file.catboxUrl}`}
+                              >
+                                <Cloud className="w-2.5 h-2.5 text-pink-400" />
+                                <span className="hidden sm:inline">Dual</span>
+                              </span>
+                            )}
                           </div>
 
                           <div className="p-1.5 sm:p-2">
@@ -1344,20 +1918,15 @@ export default function DriveApp() {
                               <p className="text-[10px] sm:text-xs font-semibold text-white truncate" title={file.name}>
                                 {file.name}
                               </p>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setShareModalFile(file);
-                                }}
-                                className="sm:hidden p-0.5 text-gray-400 hover:text-cyan-400 cursor-pointer shrink-0"
-                                title="Chia sẻ tệp"
-                              >
-                                <Share2 className="w-3 h-3" />
-                              </button>
+                              {file.isGithub && (
+                                <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" title="Tệp GitHub (Bảo vệ vĩnh viễn)" />
+                              )}
                             </div>
                             <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-gray-400 mt-0.5">
                               <span>{file.sizeFormatted}</span>
-                              <span className="uppercase font-mono">{file.ext}</span>
+                              <span className="font-mono text-[9px] uppercase text-gray-500">
+                                {file.ext}
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -1397,6 +1966,16 @@ export default function DriveApp() {
                                 if (isSelectMode) toggleSelectFile(file.name);
                                 else openLightbox(idx);
                               }}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setContextMenu({
+                                  file,
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                  isMobileSheet: window.innerWidth < 640,
+                                });
+                              }}
                               className={`cursor-pointer transition-colors ${
                                 isSelected ? "bg-cyan-500/10 text-cyan-300" : "hover:bg-white/5"
                               }`}
@@ -1418,6 +1997,11 @@ export default function DriveApp() {
                                   <img
                                     src={file.url}
                                     alt=""
+                                    onError={(e) => {
+                                      if (file.catboxUrl && (e.currentTarget as HTMLImageElement).src !== file.catboxUrl) {
+                                        (e.currentTarget as HTMLImageElement).src = file.catboxUrl;
+                                      }
+                                    }}
                                     className="w-7 h-7 rounded object-cover shrink-0 bg-black/40"
                                   />
                                 ) : (
@@ -1442,6 +2026,26 @@ export default function DriveApp() {
                               </td>
                               <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center justify-end gap-1">
+                                  {file.isGithub ? (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30 text-[10px] font-mono text-emerald-400"
+                                      title="Tệp lưu trên GitHub được bảo vệ vĩnh viễn, không thể xóa!"
+                                    >
+                                      <ShieldCheck className="w-3 h-3" />
+                                      <span className="hidden sm:inline">GitHub</span>
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setFileToDelete(file);
+                                        setShowDeleteFileModal(true);
+                                      }}
+                                      className="inline-flex p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/15 cursor-pointer transition-colors"
+                                      title="Xóa tệp khỏi máy chủ và Catbox"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => setShareModalFile(file)}
                                     className="inline-flex p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/15 cursor-pointer"
@@ -1457,6 +2061,23 @@ export default function DriveApp() {
                                   >
                                     <Download className="w-4 h-4" />
                                   </a>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                      setContextMenu({
+                                        file,
+                                        x: rect.left,
+                                        y: rect.bottom + 6,
+                                        isMobileSheet: window.innerWidth < 640,
+                                      });
+                                    }}
+                                    className="inline-flex p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/15 cursor-pointer"
+                                    title="Tùy chọn khác (Xóa, Chia sẻ, Tải về...)"
+                                    aria-label="Tùy chọn tệp"
+                                  >
+                                    <MoreVertical className="w-4 h-4" />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -1471,6 +2092,7 @@ export default function DriveApp() {
           </div>
         </main>
       </div>
+      )}
 
       {/* 3. MULTI-SELECT FLOATING ACTION BAR */}
       {isSelectMode && selectedFileNames.size > 0 && (
@@ -1572,6 +2194,21 @@ export default function DriveApp() {
                 </a>
               )}
 
+              {/* Catbox Cloud Direct Link */}
+              {currentLightboxFile.catboxUrl && (
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentLightboxFile.catboxUrl!);
+                    showToast("Đã sao chép link Catbox.moe!");
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-pink-950/60 hover:bg-pink-900/80 border border-pink-500/40 text-pink-300 font-mono text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title={`Sao chép link Catbox: ${currentLightboxFile.catboxUrl}`}
+                >
+                  <Cloud className="w-3.5 h-3.5 text-pink-400" />
+                  <span className="hidden sm:inline">Copy Catbox</span>
+                </button>
+              )}
+
               {/* Share File Button */}
               <button
                 onClick={() => setShareModalFile(currentLightboxFile)}
@@ -1592,6 +2229,29 @@ export default function DriveApp() {
                 <Download className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Tải về</span>
               </a>
+
+              {/* Delete / GitHub Protected Indicator */}
+              {currentLightboxFile.isGithub ? (
+                <div
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 font-mono text-xs flex items-center gap-1.5 shadow-sm"
+                  title="Tệp lưu trữ trên GitHub được bảo vệ vĩnh viễn, không thể xóa!"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">GitHub (Bảo vệ)</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setFileToDelete(currentLightboxFile);
+                    setShowDeleteFileModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-800/80 border border-red-500/40 text-red-300 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Xóa tệp khỏi máy chủ và Catbox"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                  <span className="hidden sm:inline">Xóa tệp</span>
+                </button>
+              )}
 
               <button
                 onClick={closeLightbox}
@@ -1632,6 +2292,11 @@ export default function DriveApp() {
                 <img
                   src={currentLightboxFile.url}
                   alt={currentLightboxFile.name}
+                  onError={(e) => {
+                    if (currentLightboxFile.catboxUrl && (e.currentTarget as HTMLImageElement).src !== currentLightboxFile.catboxUrl) {
+                      (e.currentTarget as HTMLImageElement).src = currentLightboxFile.catboxUrl;
+                    }
+                  }}
                   style={{
                     transform: `scale(${zoomLevel}) rotate(${rotation}deg)`,
                     transition: "transform 0.2s ease-out",
@@ -1718,6 +2383,11 @@ export default function DriveApp() {
                     controls
                     autoPlay
                     src={currentLightboxFile.url}
+                    onError={(e) => {
+                      if (currentLightboxFile.catboxUrl && (e.currentTarget as HTMLVideoElement).src !== currentLightboxFile.catboxUrl) {
+                        (e.currentTarget as HTMLVideoElement).src = currentLightboxFile.catboxUrl;
+                      }
+                    }}
                     className="max-h-[78vh] max-w-[90vw] rounded-xl shadow-2xl"
                   />
                 ) : (
@@ -1768,6 +2438,128 @@ export default function DriveApp() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* HIDDEN QUICK FILE INPUT */}
+      <input
+        ref={quickFileInputRef}
+        type="file"
+        multiple
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            uploadFilesDirectly(e.target.files, activeFolder || folders[0]);
+            e.target.value = "";
+          }
+        }}
+        className="hidden"
+      />
+
+      {/* QUICK DIRECT UPLOAD MODAL */}
+      {quickUploadOpen && quickUploadTargetFolder && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 animate-fadeIn select-none">
+          <div className="max-w-lg w-full rounded-2xl bg-[#0b1120] border border-cyan-500/40 p-5 sm:p-6 space-y-4 shadow-2xl relative max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.3)]">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base text-white flex items-center gap-1.5">
+                    <span>Tải Lên Trực Tiếp</span>
+                    <span className="text-cyan-400 font-mono">// ⚡</span>
+                  </h3>
+                  <p className="text-[11px] text-gray-400 font-mono flex items-center gap-1">
+                    <span>Thư mục đích:</span>
+                    <span className="text-white font-semibold">📁 {quickUploadTargetFolder.name}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (!isQuickUploading) setQuickUploadOpen(false);
+                }}
+                disabled={isQuickUploading}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer disabled:opacity-40"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Privacy notice banner */}
+            <div className="p-2.5 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200/90 text-[11px] flex items-center gap-2 shrink-0">
+              <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                <strong>Mặc định riêng tư:</strong> Tệp tải lên sẽ <strong>không chia sẻ</strong> công khai. Chỉ Quản trị viên mới thấy cho đến khi được bật chia sẻ.
+              </span>
+            </div>
+
+            {/* Files List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+              {quickUploadList.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl bg-gray-900/80 border border-gray-800/80 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center shrink-0">
+                      {item.status === "uploading" ? (
+                        <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
+                      ) : item.status === "success" ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-red-400" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-white font-medium truncate max-w-[220px] sm:max-w-xs">
+                        {item.name}
+                      </p>
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                        {formatBytes(item.size)} • {item.progress}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    {item.status === "success" && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
+                        Đã lưu 2 chiều
+                      </span>
+                    )}
+                    {item.status === "error" && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 font-bold" title={item.error}>
+                        Thất bại
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="pt-3 border-t border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => quickFileInputRef.current?.click()}
+                disabled={isQuickUploading}
+                className="px-3.5 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors"
+              >
+                <Upload className="w-3.5 h-3.5 text-cyan-400" />
+                <span>+ Thêm tệp khác</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setQuickUploadOpen(false)}
+                disabled={isQuickUploading}
+                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+              >
+                {isQuickUploading ? "Đang xử lý..." : "Xong & Đóng"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2039,6 +2831,512 @@ export default function DriveApp() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* CREATE FOLDER MODAL */}
+      {showCreateFolderModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
+          <div className="max-w-md w-full rounded-2xl bg-[#0b1120] border border-cyan-500/40 p-6 space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.3)]">
+                  <FolderPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Thêm Thư Mục Mới</h3>
+                  <p className="text-[11px] text-gray-400 font-mono">Tự động đồng bộ Database & Ổ đĩa</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCreateFolderModal(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateFolder} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                  Tên thư mục <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="Ví dụ: Đồ án tốt nghiệp, Tài liệu KTS..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                  Mô tả ngắn gọn (Tùy chọn)
+                </label>
+                <input
+                  type="text"
+                  value={newFolderDesc}
+                  onChange={(e) => setNewFolderDesc(e.target.value)}
+                  placeholder="Mô tả mục đích lưu trữ của thư mục..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-gray-900/80 border border-gray-800 space-y-2.5">
+                <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
+                  <span>Chia sẻ công khai</span>
+                  <input
+                    type="checkbox"
+                    checked={newFolderIsShared}
+                    onChange={(e) => setNewFolderIsShared(e.target.checked)}
+                    className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-400 bg-gray-800 border-gray-600"
+                  />
+                </label>
+                <label className="flex items-center justify-between text-xs text-gray-300 cursor-pointer">
+                  <span>Cho phép tải xuống</span>
+                  <input
+                    type="checkbox"
+                    checked={newFolderAllowDownload}
+                    onChange={(e) => setNewFolderAllowDownload(e.target.checked)}
+                    className="w-4 h-4 rounded text-cyan-500 focus:ring-cyan-400 bg-gray-800 border-gray-600"
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                  Mật khẩu bảo vệ (Để trống nếu không khóa)
+                </label>
+                <input
+                  type="password"
+                  value={newFolderPassword}
+                  onChange={(e) => setNewFolderPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateFolderModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold text-xs cursor-pointer transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingFolder || !newFolderName.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-500/25 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isCreatingFolder ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>{isCreatingFolder ? "Đang tạo..." : "Tạo Thư Mục"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE FOLDER CONFIRMATION MODAL */}
+      {showDeleteFolderModal && folderToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
+          <div className="max-w-md w-full rounded-2xl bg-[#0b1120] border border-red-500/40 p-6 space-y-4 shadow-2xl relative">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">Xác Nhận Xóa Thư Mục</h3>
+                <p className="text-[11px] text-gray-400 font-mono">Hành động nguy hiểm không thể hoàn tác</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-red-950/20 border border-red-900/40 text-xs text-red-200/90 leading-relaxed space-y-1.5">
+              <p>
+                Bạn có chắc chắn muốn xóa thư mục <strong className="text-white font-mono">"{folderToDelete.name}"</strong>?
+              </p>
+              <p className="text-[11px] text-red-400 font-mono">
+                ⚠ Toàn bộ tệp tin bên trong ({folderToDelete.filesCount} tệp), dữ liệu trên máy chủ và các liên kết sao lưu Catbox.moe sẽ bị xóa vĩnh viễn!
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteFolderModal(false);
+                  setFolderToDelete(null);
+                }}
+                disabled={isDeletingFolder}
+                className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold text-xs cursor-pointer transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteFolder}
+                disabled={isDeletingFolder}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-red-600/30 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingFolder ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>{isDeletingFolder ? "Đang xóa..." : "Xác Nhận Xóa Vĩnh Viễn"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE FILE CONFIRMATION MODAL */}
+      {showDeleteFileModal && fileToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
+          <div className="max-w-md w-full rounded-2xl bg-[#0b1120] border border-red-500/40 p-6 space-y-4 shadow-2xl relative">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">Xác Nhận Xóa Tệp</h3>
+                <p className="text-[11px] text-gray-400 font-mono">Xóa tệp khỏi kho lưu trữ</p>
+              </div>
+            </div>
+
+            {fileToDelete.isGithub ? (
+              <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-xs text-emerald-300 leading-relaxed flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                <span>
+                  Tệp <strong>"{fileToDelete.name}"</strong> được lưu trên kho lưu trữ GitHub và được <strong>bảo vệ vĩnh viễn</strong>. Không thể xóa tệp này!
+                </span>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-xl bg-red-950/20 border border-red-900/40 text-xs text-red-200/90 leading-relaxed space-y-2">
+                <p>
+                  Bạn có chắc chắn muốn xóa tệp:
+                </p>
+                <div className="p-2 rounded-lg bg-black/40 border border-gray-800 text-white font-mono text-[11px] truncate">
+                  📄 {fileToDelete.name} ({fileToDelete.sizeFormatted})
+                </div>
+                <p className="text-[11px] text-red-400">
+                  {fileToDelete.catboxUrl
+                    ? "✓ Tệp sẽ được xóa đồng thời khỏi máy chủ cục bộ và liên kết Catbox.moe."
+                    : "✓ Tệp sẽ được xóa vĩnh viễn khỏi máy chủ cục bộ."}
+                </p>
+              </div>
+            )}
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteFileModal(false);
+                  setFileToDelete(null);
+                }}
+                disabled={isDeletingFile}
+                className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold text-xs cursor-pointer transition-colors"
+              >
+                {fileToDelete.isGithub ? "Đóng" : "Hủy bỏ"}
+              </button>
+              {!fileToDelete.isGithub && (
+                <button
+                  type="button"
+                  onClick={handleDeleteFile}
+                  disabled={isDeletingFile}
+                  className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-red-600/30 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isDeletingFile ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  <span>{isDeletingFile ? "Đang xóa..." : "Xóa Tệp Này"}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTEXT MENU (PC RIGHT-CLICK) & ACTION SHEET (MOBILE 3-DOTS) */}
+      {contextMenu && (
+        <>
+          {contextMenu.isMobileSheet ? (
+            /* MOBILE ACTION SHEET (SLIDE UP BOTTOM SHEET) */
+            <div
+              className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-sm animate-fadeIn select-none sm:hidden"
+              onClick={() => setContextMenu(null)}
+            >
+              <div
+                className="w-full bg-[#0c1222] border-t border-cyan-500/30 rounded-t-2xl p-4 space-y-3 shadow-2xl animate-slideUp max-h-[85vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Drag Handle Indicator */}
+                <div className="w-12 h-1 bg-gray-600 rounded-full mx-auto mb-2 opacity-70" />
+
+                {/* File Header Info */}
+                <div className="flex items-center gap-3 pb-3 border-b border-gray-800">
+                  <div className="w-10 h-10 rounded-xl bg-gray-900 border border-gray-700 flex items-center justify-center shrink-0 overflow-hidden">
+                    {getFileCategory(contextMenu.file) === "image" ? (
+                      <img
+                        src={contextMenu.file.url}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      renderCategoryIcon(getFileCategory(contextMenu.file), "w-5 h-5")
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-white truncate" title={contextMenu.file.name}>
+                      {contextMenu.file.name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+                      <span>{contextMenu.file.sizeFormatted}</span>
+                      <span>•</span>
+                      <span className="uppercase font-mono">{contextMenu.file.ext}</span>
+                      {contextMenu.file.isGithub ? (
+                        <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-0.5">
+                          <ShieldCheck className="w-3 h-3" /> GitHub
+                        </span>
+                      ) : contextMenu.file.catboxUrl ? (
+                        <span className="text-[10px] text-pink-400 font-mono flex items-center gap-0.5">
+                          <Cloud className="w-3 h-3" /> Catbox
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setContextMenu(null)}
+                    className="p-1 rounded-lg text-gray-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Action Items List */}
+                <div className="space-y-1">
+                  {/* Share file */}
+                  <button
+                    onClick={() => {
+                      const file = contextMenu.file;
+                      setContextMenu(null);
+                      setShareModalFile(file);
+                    }}
+                    className="w-full px-3 py-3 rounded-xl hover:bg-cyan-500/10 text-cyan-400 hover:text-cyan-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                  >
+                    <div className="p-2 rounded-lg bg-cyan-500/15 text-cyan-400">
+                      <Share2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Chia sẻ tệp</div>
+                      <div className="text-[11px] text-gray-400">Tạo mã chia sẻ hoặc gửi qua mạng xã hội</div>
+                    </div>
+                  </button>
+
+                  {/* Delete file (Catbox vs GitHub protected) */}
+                  {contextMenu.file.isGithub ? (
+                    <div
+                      className="w-full px-3 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-3"
+                    >
+                      <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 shrink-0">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-emerald-300">Tệp GitHub vĩnh viễn</div>
+                        <div className="text-[11px] text-emerald-400/80">Không thể xóa tệp được lưu trên kho lưu trữ GitHub</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const file = contextMenu.file;
+                        setContextMenu(null);
+                        setFileToDelete(file);
+                        setShowDeleteFileModal(true);
+                      }}
+                      className="w-full px-3 py-3 rounded-xl hover:bg-red-500/15 text-red-400 hover:text-red-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                    >
+                      <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
+                        <Trash2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-red-400">Xóa tệp</div>
+                        <div className="text-[11px] text-gray-400">Xóa tệp khỏi máy chủ và Catbox.moe</div>
+                      </div>
+                    </button>
+                  )}
+
+                  <div className="my-1 border-t border-gray-800" />
+
+                  {/* Preview / Open */}
+                  <button
+                    onClick={() => {
+                      const idx = filteredFiles.findIndex((f) => f.name === contextMenu.file.name);
+                      setContextMenu(null);
+                      if (idx !== -1) openLightbox(idx);
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl hover:bg-white/5 text-gray-200 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                  >
+                    <div className="p-2 rounded-lg bg-white/5 text-gray-300">
+                      <Eye className="w-4 h-4" />
+                    </div>
+                    <span>Xem tệp trực tiếp</span>
+                  </button>
+
+                  {/* Download */}
+                  <a
+                    href={contextMenu.file.downloadUrl}
+                    download={contextMenu.file.name}
+                    onClick={() => setContextMenu(null)}
+                    className="w-full px-3 py-2.5 rounded-xl hover:bg-white/5 text-gray-200 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                  >
+                    <div className="p-2 rounded-lg bg-white/5 text-gray-300">
+                      <Download className="w-4 h-4" />
+                    </div>
+                    <span>Tải tệp về máy</span>
+                  </a>
+
+                  {/* Copy Link */}
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}/drive?share=${encodeURIComponent(
+                        activeFolder?.id || "1"
+                      )}&file=${encodeURIComponent(contextMenu.file.name)}`;
+                      navigator.clipboard.writeText(link);
+                      showToast("Đã sao chép liên kết tệp!");
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl hover:bg-white/5 text-gray-200 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                  >
+                    <div className="p-2 rounded-lg bg-white/5 text-gray-300">
+                      <Copy className="w-4 h-4" />
+                    </div>
+                    <span>Sao chép liên kết</span>
+                  </button>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => setContextMenu(null)}
+                    className="w-full py-2.5 rounded-xl bg-gray-800 text-gray-300 font-medium text-xs hover:bg-gray-700 transition-colors cursor-pointer"
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* DESKTOP CONTEXT MENU (FLOATING POPOVER AT MOUSE POSITION) */
+            <div
+              className="fixed z-50 bg-[#0d1424]/95 backdrop-blur-md border border-cyan-500/40 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8),0_0_15px_rgba(34,211,238,0.2)] p-1.5 w-60 animate-fadeIn select-none text-xs"
+              style={{
+                top: `${Math.max(10, Math.min(contextMenu.y, window.innerHeight - 280))}px`,
+                left: `${Math.max(10, Math.min(contextMenu.x, window.innerWidth - 250))}px`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header Info */}
+              <div className="px-2.5 py-1.5 border-b border-gray-800/80 mb-1">
+                <p className="font-semibold text-white truncate text-[11px]" title={contextMenu.file.name}>
+                  {contextMenu.file.name}
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-gray-400">
+                  <span>{contextMenu.file.sizeFormatted}</span>
+                  <span>•</span>
+                  {contextMenu.file.isGithub ? (
+                    <span className="text-emerald-400 font-mono flex items-center gap-0.5">
+                      <ShieldCheck className="w-2.5 h-2.5" /> GitHub
+                    </span>
+                  ) : contextMenu.file.catboxUrl ? (
+                    <span className="text-pink-400 font-mono flex items-center gap-0.5">
+                      <Cloud className="w-2.5 h-2.5" /> Catbox
+                    </span>
+                  ) : (
+                    <span className="text-gray-400 font-mono">Local</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Menu Actions */}
+              <div className="space-y-0.5">
+                {/* Share Option */}
+                <button
+                  onClick={() => {
+                    const file = contextMenu.file;
+                    setContextMenu(null);
+                    setShareModalFile(file);
+                  }}
+                  className="w-full px-2.5 py-2 rounded-lg hover:bg-cyan-500/15 text-cyan-300 hover:text-cyan-200 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="font-medium">Chia sẻ tệp</span>
+                </button>
+
+                {/* Delete Option (Catbox vs GitHub protected) */}
+                {contextMenu.file.isGithub ? (
+                  <div
+                    className="w-full px-2.5 py-2 rounded-lg text-gray-500 flex items-center gap-2.5 cursor-not-allowed select-none"
+                    title="Tệp lưu trữ trên GitHub được bảo vệ vĩnh viễn, không thể xóa!"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/70" />
+                    <span className="italic text-[11px]">Bảo vệ bởi GitHub (Không thể xóa)</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const file = contextMenu.file;
+                      setContextMenu(null);
+                      setFileToDelete(file);
+                      setShowDeleteFileModal(true);
+                    }}
+                    className="w-full px-2.5 py-2 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    <span className="font-medium">Xóa tệp (Catbox & Cục bộ)</span>
+                  </button>
+                )}
+
+                <div className="my-1 border-t border-gray-800" />
+
+                {/* Preview / Lightbox */}
+                <button
+                  onClick={() => {
+                    const idx = filteredFiles.findIndex((f) => f.name === contextMenu.file.name);
+                    setContextMenu(null);
+                    if (idx !== -1) openLightbox(idx);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Xem tệp</span>
+                </button>
+
+                {/* Download */}
+                <a
+                  href={contextMenu.file.downloadUrl}
+                  download={contextMenu.file.name}
+                  onClick={() => setContextMenu(null)}
+                  className="w-full px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Tải tệp về máy</span>
+                </a>
+
+                {/* Copy Link */}
+                <button
+                  onClick={() => {
+                    const link = `${window.location.origin}/drive?share=${encodeURIComponent(
+                      activeFolder?.id || "1"
+                      )}&file=${encodeURIComponent(contextMenu.file.name)}`;
+                    navigator.clipboard.writeText(link);
+                    showToast("Đã sao chép liên kết tệp!");
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Sao chép liên kết</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* 6. ADMIN LOGIN MODAL */}

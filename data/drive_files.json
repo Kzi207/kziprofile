@@ -1,0 +1,73 @@
+[
+  {
+    "id": "img:Ảnh chụp màn hình 2026-05-02 133132.png",
+    "folderId": "img",
+    "name": "Ảnh chụp màn hình 2026-05-02 133132.png",
+    "size": 527488,
+    "sizeFormatted": "515.13 KB",
+    "ext": "PNG",
+    "category": "image",
+    "localUrl": "https://files.catbox.moe/m21oru.png",
+    "catboxUrl": "https://files.catbox.moe/m21oru.png",
+    "backupStatus": "both_active",
+    "createdAt": "2026-09-25T07:42:05.885Z",
+    "updatedAt": "2026-09-25T07:57:32.244Z"
+  },
+  {
+    "id": "img:Screen Recording 2026-09-23 200234.mp4",
+    "folderId": "img",
+    "name": "Screen Recording 2026-09-23 200234.mp4",
+    "size": 2807515,
+    "sizeFormatted": "2.68 MB",
+    "ext": "MP4",
+    "category": "media",
+    "localUrl": "/drive-files/img/Screen%20Recording%202026-09-23%20200234.mp4",
+    "catboxUrl": "https://files.catbox.moe/7553kv.mp4",
+    "backupStatus": "both_active",
+    "createdAt": "2026-09-25T07:21:41.354Z",
+    "updatedAt": "2026-09-25T07:21:41.354Z"
+  },
+  {
+    "id": "img:3556 Likes, 12 Comments.jpeg",
+    "folderId": "img",
+    "name": "3556 Likes, 12 Comments.jpeg",
+    "size": 60622,
+    "sizeFormatted": "59.2 KB",
+    "ext": "JPEG",
+    "category": "image",
+    "localUrl": "/drive-files/img/3556%20Likes%2C%2012%20Comments.jpeg",
+    "catboxUrl": "https://files.catbox.moe/fbsbfc.jpeg",
+    "backupStatus": "both_active",
+    "createdAt": "2026-09-25T06:40:33.837Z",
+    "updatedAt": "2026-09-25T06:40:33.837Z"
+  },
+  {
+    "id": "KTS:test_auto.txt",
+    "folderId": "KTS",
+    "name": "test_auto.txt",
+    "size": 11,
+    "sizeFormatted": "11 Bytes",
+    "ext": "TXT",
+    "category": "text",
+    "localUrl": "/drive-files/KTS/test_auto.txt",
+    "catboxUrl": "https://files.catbox.moe/z91iv7.txt",
+    "backupStatus": "both_active",
+    "createdAt": "2026-09-25T06:22:56.743Z",
+    "updatedAt": "2026-09-25T06:22:56.743Z"
+  },
+  {
+    "id": "do-an-ky-thuat-so:Do_an_bo_nguon_on_ap_5V_12V_2A.docx",
+    "folderId": "do-an-ky-thuat-so",
+    "name": "Do_an_bo_nguon_on_ap_5V_12V_2A.docx",
+    "size": 5357892,
+    "sizeFormatted": "5.11 MB",
+    "ext": "DOCX",
+    "category": "word",
+    "localUrl": "/drive-files/do-an-ky-thuat-so/Do_an_bo_nguon_on_ap_5V_12V_2A.docx",
+    "catboxUrl": "https://files.catbox.moe/s9pouh.zip",
+    "backupStatus": "both_active",
+    "createdAt": "2026-09-25T06:11:40.517Z",
+    "updatedAt": "2026-09-25T06:22:39.904Z",
+    "lastChecked": "2026-09-25T06:22:39.626Z"
+  }
+]
