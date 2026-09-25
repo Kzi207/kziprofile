@@ -1794,16 +1794,27 @@ async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string>
   else if (ext === ".webp") mimeType = "image/webp";
   else if (ext === ".gif") mimeType = "image/gif";
   else if (ext === ".mp4") mimeType = "video/mp4";
+  else if (ext === ".webm") mimeType = "video/webm";
+  else if (ext === ".mov") mimeType = "video/quicktime";
+  else if (ext === ".mkv") mimeType = "video/x-matroska";
+  else if (ext === ".avi") mimeType = "video/x-msvideo";
   else if (ext === ".mp3") mimeType = "audio/mpeg";
+  else if (ext === ".wav") mimeType = "audio/wav";
+  else if (ext === ".ogg") mimeType = "audio/ogg";
   else if (ext === ".pdf") mimeType = "application/pdf";
   else if (ext === ".txt") mimeType = "text/plain";
-  else if ([".zip", ".rar", ".7z"].includes(ext)) mimeType = "application/zip";
+  else if ([".zip", ".rar", ".7z", ".tar", ".gz"].includes(ext)) mimeType = "application/zip";
 
-  const blob = new Blob([buffer], { type: mimeType });
+  if (buffer.length > 200 * 1024 * 1024) {
+    throw new Error(`Dung lượng tệp (${formatBytes(buffer.length)}) vượt quá giới hạn tối đa 200MB của Catbox.moe! Vui lòng chọn video dưới 200MB.`);
+  }
+
+  const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
   fd.append("fileToUpload", blob, uploadFilename);
 
+  // 5 minutes timeout for large video uploads
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 45000);
+  const timeoutId = setTimeout(() => controller.abort(), 300000);
   try {
     const res = await fetch("https://catbox.moe/user/api.php", {
       method: "POST",
@@ -1813,15 +1824,18 @@ async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string>
     clearTimeout(timeoutId);
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new Error(`Catbox upload failed (${res.status}): ${errText}`);
+      throw new Error(`Lỗi máy chủ Catbox (${res.status}): ${errText || "Không thể lưu tệp"}`);
     }
     const url = (await res.text()).trim();
     if (!url.startsWith("http")) {
-      throw new Error(`Catbox error: ${url}`);
+      throw new Error(`Catbox phản hồi: ${url}`);
     }
     return url;
   } catch (err: any) {
     clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      throw new Error("Tải lên thất bại do mạng bị gián đoạn hoặc quá thời gian (Timeout 5 phút).");
+    }
     throw err;
   }
 }
@@ -2362,9 +2376,12 @@ app.post("/api/drive/files/share", async (req: Request, res: Response) => {
 });
 
 
-// 5. Delete Folder
+// 5. Delete Folder (Admin Only)
 app.delete("/api/drive/folders/:id", async (req: Request, res: Response) => {
   try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên (Admin) mới có quyền xóa thư mục!" });
+    }
     const folderId = req.params.id;
     if (folderId === "fme-ctut" || folderId === "1" || folderId.toLowerCase() === "img") {
       return res.status(400).json({ success: false, message: "Không thể xóa thư mục gốc hệ thống (img)" });
@@ -2570,6 +2587,7 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
           if (match.catboxUrl) {
             item.url = match.catboxUrl;
           }
+          item.downloadUrl = `/api/drive/download?folder=${encodeURIComponent(folderKey)}&file=${encodeURIComponent(item.name)}`;
         } else {
           item.catboxUrl = "";
           item.backupStatus = "local_only";
@@ -2717,21 +2735,24 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
         ) || dbFiles.find((f) => f.name.toLowerCase() === safeName.toLowerCase());
 
       if (match && match.catboxUrl) {
-        console.log(`[Download Stream] Streaming from Catbox: ${match.catboxUrl}`);
         try {
           const cbRes = await fetch(match.catboxUrl);
-          if (cbRes.ok) {
-            const arrayBuf = await cbRes.arrayBuffer();
-            const buf = Buffer.from(arrayBuf);
-            res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeName)}"`);
-            res.setHeader("Content-Type", cbRes.headers.get("content-type") || "application/octet-stream");
-            res.setHeader("Content-Length", buf.length.toString());
-            return res.end(buf);
+          if (cbRes.ok && cbRes.body) {
+            const asciiSafeName = safeName.replace(/[^\x20-\x7E]/g, "_").replace(/"/g, '\\"');
+            res.setHeader(
+              "Content-Disposition",
+              `attachment; filename="${asciiSafeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`
+            );
+            res.setHeader("Content-Type", "application/octet-stream");
+            const contentLength = cbRes.headers.get("content-length");
+            if (contentLength) res.setHeader("Content-Length", contentLength);
+            const { Readable } = await import("stream");
+            Readable.fromWeb(cbRes.body as any).pipe(res);
+            return;
           }
         } catch (fetchErr) {
-          console.warn("[Download Catbox Fetch Error]:", fetchErr);
+          console.error("Lỗi stream tệp từ Catbox:", fetchErr);
         }
-        return res.redirect(match.catboxUrl);
       }
     } catch (e) {
       console.warn("Auto-restore download error:", e);
@@ -2967,9 +2988,16 @@ app.get("/api/drive/db-files", async (req: Request, res: Response) => {
   }
 });
 
-// 9. Delete File from Folder (Catbox & Local allowed; GitHub protected)
+// 9. Delete File from Folder (Admin Only; Catbox & Local allowed; GitHub protected)
 app.delete("/api/drive/delete", async (req: Request, res: Response) => {
   try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({
+        success: false,
+        message: "Chỉ Quản trị viên (Admin) mới có quyền xóa tệp!",
+      });
+    }
+
     const filename = (req.body?.filename || req.body?.fileName || req.body?.file || req.query?.file) as string;
     const folderId = (req.body?.folder || req.query?.folder || "fme-ctut") as string;
     const isGithub = Boolean(req.body?.isGithub || req.query?.isGithub);
@@ -2988,14 +3016,35 @@ app.delete("/api/drive/delete", async (req: Request, res: Response) => {
       });
     }
 
+    // Resolve folder aliases and paths
+    const { folder, folderName, localDirs: resolvedLocalDirs } = await resolveFolder(folderId);
+    const { localDirs: legacyLocalDirs } = resolveFolderPaths(folderId);
+    const candidateFolderIds = new Set<string>([
+      folderId.toLowerCase(),
+      slugifyFolderName(folderId),
+      folderName.toLowerCase(),
+      slugifyFolderName(folderName),
+    ]);
+    if (folder) {
+      if (folder.id) candidateFolderIds.add(String(folder.id).toLowerCase());
+      if (folder.folder) {
+        candidateFolderIds.add(folder.folder.toLowerCase());
+        candidateFolderIds.add(slugifyFolderName(folder.folder));
+      }
+      if (folder.name) {
+        candidateFolderIds.add(folder.name.toLowerCase());
+        candidateFolderIds.add(slugifyFolderName(folder.name));
+      }
+    }
+
     // 2. Xóa khỏi Catbox.moe nếu tệp có liên kết Catbox
     let catboxDeleted = false;
     try {
       const allDbFiles = await getStoredDriveFiles();
       const match = allDbFiles.find(
         (f) =>
-          (f.folderId.toLowerCase() === folderId.toLowerCase() ||
-           slugifyFolderName(f.folderId) === slugifyFolderName(folderId)) &&
+          (candidateFolderIds.has(f.folderId.toLowerCase()) ||
+           candidateFolderIds.has(slugifyFolderName(f.folderId))) &&
           f.name.toLowerCase() === safeName.toLowerCase()
       );
       if (match && match.catboxUrl) {
@@ -3004,8 +3053,8 @@ app.delete("/api/drive/delete", async (req: Request, res: Response) => {
       // Xóa bản ghi trong Neon DB drive_files_db
       const remainingFiles = allDbFiles.filter(
         (f) => !(
-          (f.folderId.toLowerCase() === folderId.toLowerCase() ||
-           slugifyFolderName(f.folderId) === slugifyFolderName(folderId)) &&
+          (candidateFolderIds.has(f.folderId.toLowerCase()) ||
+           candidateFolderIds.has(slugifyFolderName(f.folderId))) &&
           f.name.toLowerCase() === safeName.toLowerCase()
         )
       );
@@ -3015,15 +3064,21 @@ app.delete("/api/drive/delete", async (req: Request, res: Response) => {
     }
 
     // 3. Xóa tệp khỏi bộ nhớ máy chủ Local (kiểm tra tất cả thư mục có thể)
-    const { localDirs } = resolveFolderPaths(folderId);
-    let resolvedDirs: string[] = [];
-    try {
-      const res = await resolveFolder(folderId);
-      resolvedDirs = res.localDirs;
-    } catch {}
-    const allDirsToCheck = new Set([...localDirs, ...resolvedDirs]);
+    const allDirsToCheck = new Set<string>([
+      ...resolvedLocalDirs,
+      ...legacyLocalDirs,
+      path.join(process.cwd(), "drive", folderId),
+      path.join(process.cwd(), "drive", folderName),
+      path.join(process.cwd(), "drive", slugifyFolderName(folderName)),
+      path.join(process.cwd(), "public", "drive", folderName),
+      path.join(process.cwd(), "public", "drive", slugifyFolderName(folderName)),
+      path.join(process.cwd(), "public", "img"),
+      path.join(process.cwd(), "dist", "drive", folderName),
+    ]);
+
     let localDeleted = false;
     for (const d of allDirsToCheck) {
+      if (!d || !fs.existsSync(d)) continue;
       const p = path.join(d, safeName);
       if (fs.existsSync(p)) {
         try {
@@ -3032,27 +3087,16 @@ app.delete("/api/drive/delete", async (req: Request, res: Response) => {
         } catch (e) {}
       }
       // Kiểm tra xóa không phân biệt hoa thường
-      if (fs.existsSync(d)) {
-        try {
-          const files = fs.readdirSync(d);
-          for (const f of files) {
-            if (f.toLowerCase() === safeName.toLowerCase()) {
-              try {
-                fs.unlinkSync(path.join(d, f));
-                localDeleted = true;
-              } catch (e) {}
-            }
-          }
-        } catch (e) {}
-      }
-    }
-
-    // Cũng kiểm tra thư mục gốc drive/<folderId>
-    const directPath = path.join(process.cwd(), "drive", folderId, safeName);
-    if (fs.existsSync(directPath)) {
       try {
-        fs.unlinkSync(directPath);
-        localDeleted = true;
+        const files = fs.readdirSync(d);
+        for (const f of files) {
+          if (f.toLowerCase() === safeName.toLowerCase()) {
+            try {
+              fs.unlinkSync(path.join(d, f));
+              localDeleted = true;
+            } catch (e) {}
+          }
+        }
       } catch (e) {}
     }
 
@@ -3062,7 +3106,12 @@ app.delete("/api/drive/delete", async (req: Request, res: Response) => {
     // 4. Xóa tệp khỏi danh sách sharedFiles của thư mục nếu có
     try {
       const storedFolders = await getStoredFolders();
-      const folderMeta = storedFolders.find((f) => f.id === folderId || f.folder === folderId || f.name === folderId);
+      const folderMeta = storedFolders.find(
+        (f) =>
+          candidateFolderIds.has(String(f.id).toLowerCase()) ||
+          (f.folder && candidateFolderIds.has(f.folder.toLowerCase())) ||
+          (f.name && candidateFolderIds.has(f.name.toLowerCase()))
+      );
       if (folderMeta && Array.isArray(folderMeta.sharedFiles)) {
         folderMeta.sharedFiles = folderMeta.sharedFiles.filter((sf) => sf.toLowerCase() !== safeName.toLowerCase());
         await saveStoredFolders(storedFolders);

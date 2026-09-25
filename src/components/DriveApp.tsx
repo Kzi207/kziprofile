@@ -50,6 +50,9 @@ import {
   Plus,
   AlertTriangle,
   MoreVertical,
+  Minimize2,
+  Maximize2,
+  Minus,
 } from "lucide-react";
 import DriveUploadStation from "./DriveUploadStation";
 
@@ -321,7 +324,22 @@ export default function DriveApp() {
 
   // App & Data states
   const [folders, setFolders] = useState<DriveFolder[]>([]);
-  const [activeFolder, setActiveFolder] = useState<DriveFolder | null>(null);
+  const [activeFolder, setActiveFolder] = useState<DriveFolder | null>(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const shareParam = urlParams.get("share") || urlParams.get("folder");
+      if (shareParam) {
+        return {
+          id: shareParam,
+          name: shareParam === "1" ? "img" : shareParam,
+          folder: shareParam,
+          isShared: true,
+          filesCount: 0,
+        };
+      }
+    } catch {}
+    return null;
+  });
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [loadingFolders, setLoadingFolders] = useState(true);
   const [loadingFiles, setLoadingFiles] = useState(false);
@@ -403,6 +421,7 @@ export default function DriveApp() {
   // Quick Direct Upload to Current Folder states
   const quickFileInputRef = useRef<HTMLInputElement>(null);
   const [quickUploadOpen, setQuickUploadOpen] = useState(false);
+  const [quickUploadMinimized, setQuickUploadMinimized] = useState(false);
   const [quickUploadTargetFolder, setQuickUploadTargetFolder] = useState<DriveFolder | null>(null);
   const [isDraggingOverFolder, setIsDraggingOverFolder] = useState(false);
   const [isQuickUploading, setIsQuickUploading] = useState(false);
@@ -428,6 +447,48 @@ export default function DriveApp() {
       setToastMessage(null);
     }, 3200);
   }, []);
+
+  // Safe Direct Download Handler to save file to computer (with Debounce & Preparation notification)
+  const [downloadingFileNames, setDownloadingFileNames] = useState<Set<string>>(new Set());
+
+  const handleDownloadFile = useCallback((file: DriveFile, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (downloadingFileNames.has(file.name)) {
+      showToast(`⏳ Tệp "${file.name}" đang được tải xuống, vui lòng không bấm liên tục!`);
+      return;
+    }
+
+    setDownloadingFileNames((prev) => new Set(prev).add(file.name));
+    showToast(`⏳ Đang chuẩn bị tệp "${file.name}" tải về máy...`);
+
+    const downloadTargetUrl =
+      file.downloadUrl && file.downloadUrl.startsWith("/api/drive/download")
+        ? file.downloadUrl
+        : `/api/drive/download?folder=${encodeURIComponent(activeFolder?.id || "1")}&file=${encodeURIComponent(file.name)}`;
+
+    // Trigger direct browser attachment download directly to user's computer via hidden iframe
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = downloadTargetUrl;
+    document.body.appendChild(iframe);
+
+    setTimeout(() => {
+      if (document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
+    }, 10000);
+
+    setTimeout(() => {
+      setDownloadingFileNames((prev) => {
+        const next = new Set(prev);
+        next.delete(file.name);
+        return next;
+      });
+    }, 3000);
+  }, [activeFolder?.id, downloadingFileNames, showToast]);
 
   const isAdmin = useMemo(() => !!adminToken, [adminToken]);
 
@@ -524,9 +585,14 @@ export default function DriveApp() {
                 f.folder === shareParam ||
                 f.shareToken === shareParam
             ) || fetchedFolders[0];
-          setActiveFolder(matched);
+          setActiveFolder((prev) => {
+            if (prev && (prev.id === matched.id || prev.folder === matched.folder || prev.name === matched.name || prev.id === shareParam || prev.folder === shareParam)) {
+              return { ...prev, ...matched };
+            }
+            return matched;
+          });
         } else {
-          setActiveFolder(fetchedFolders[0]);
+          setActiveFolder((prev) => prev || fetchedFolders[0]);
         }
       }
     } catch (err: any) {
@@ -612,6 +678,7 @@ export default function DriveApp() {
 
     setQuickUploadTargetFolder(destinationFolder);
     setQuickUploadOpen(true);
+    setQuickUploadMinimized(false);
     setIsQuickUploading(true);
 
     const initialItems = filesArray.map((f) => ({
@@ -626,6 +693,10 @@ export default function DriveApp() {
     for (let i = 0; i < filesArray.length; i++) {
       const file = filesArray[i];
       try {
+        if (file.size > 200 * 1024 * 1024) {
+          throw new Error(`Dung lượng tệp (${(file.size / (1024 * 1024)).toFixed(1)} MB) vượt quá giới hạn tối đa 200MB của Catbox.moe! Vui lòng nén hoặc chọn video nhỏ hơn.`);
+        }
+
         const base64Data = await fileToBase64(file);
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
@@ -856,6 +927,10 @@ export default function DriveApp() {
 
   // Delete Folder Handler
   const handleDeleteFolder = async () => {
+    if (!adminToken) {
+      showToast("Chỉ Quản trị viên (Admin) mới có quyền xóa thư mục!");
+      return;
+    }
     if (!folderToDelete) return;
     if (folderToDelete.id === "1" || folderToDelete.id === "img") {
       showToast("Không thể xóa thư mục gốc hệ thống!");
@@ -885,6 +960,10 @@ export default function DriveApp() {
 
   // Delete File Handler (Catbox & Local allowed; GitHub strictly protected)
   const handleDeleteFile = async () => {
+    if (!adminToken) {
+      showToast("Chỉ Quản trị viên (Admin) mới có quyền xóa tệp!");
+      return;
+    }
     if (!fileToDelete || !activeFolder) return;
     if (fileToDelete.isGithub) {
       showToast("Tệp lưu trên GitHub được bảo vệ vĩnh viễn, không thể xóa!");
@@ -1344,7 +1423,7 @@ export default function DriveApp() {
             ) : (
               folders.map((folder) => {
                 const isActive = activeFolder?.id === folder.id;
-                const canDeleteFolder = folder.id !== "1" && folder.id !== "img";
+                const canDeleteFolder = Boolean(adminToken) && folder.id !== "1" && folder.id !== "img";
                 return (
                   <div
                     key={folder.id}
@@ -1662,7 +1741,7 @@ export default function DriveApp() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {folders.map((folder) => {
-                    const canDeleteFolder = folder.id !== "1" && folder.id !== "img";
+                    const canDeleteFolder = Boolean(adminToken) && folder.id !== "1" && folder.id !== "img";
                     return (
                       <div
                         key={folder.id}
@@ -1732,10 +1811,15 @@ export default function DriveApp() {
 
             {activeFolder && (
               <>
-                {loadingFiles ? (
-                  <div className="h-64 flex flex-col items-center justify-center space-y-3 text-gray-400 animate-pulse">
-                    <RefreshCw className="w-8 h-8 animate-spin text-cyan-400" />
-                    <span className="text-sm font-medium">Đang nạp danh sách tệp tin...</span>
+                {loadingFiles && files.length === 0 ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-1.5 sm:gap-2.5 pb-20 animate-pulse">
+                    {[...Array(7)].map((_, i) => (
+                      <div key={i} className="aspect-square rounded-xl bg-gray-900/60 border border-gray-800/60 flex flex-col items-center justify-center p-3 gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-gray-800/80" />
+                        <div className="w-14 h-2 rounded bg-gray-800/80 mt-1" />
+                        <div className="w-8 h-1.5 rounded bg-gray-800/50" />
+                      </div>
+                    ))}
                   </div>
                 ) : filteredFiles.length === 0 ? (
                   <div className="h-64 flex flex-col items-center justify-center space-y-3 text-gray-400 text-center px-4">
@@ -1845,7 +1929,7 @@ export default function DriveApp() {
 
                               {/* Desktop Quick Actions on hover */}
                               <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {!file.isGithub && (
+                                {!file.isGithub && adminToken && (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -1890,16 +1974,24 @@ export default function DriveApp() {
                               </button>
                             </div>
 
-                            {/* Bottom Right: Direct Download Button */}
-                            <a
-                              href={file.downloadUrl}
-                              download={file.name}
-                              onClick={(e) => e.stopPropagation()}
-                              className="hidden sm:flex absolute bottom-2 right-2 p-1.5 rounded-lg bg-black/60 hover:bg-cyan-500 text-white hover:text-black opacity-0 group-hover:opacity-100 transition-all shadow-md cursor-pointer z-10"
-                              title="Tải tệp gốc"
+                            {/* Bottom Right: Direct Download Button with Anti-spam */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleDownloadFile(file, e)}
+                              disabled={downloadingFileNames.has(file.name)}
+                              className={`hidden sm:flex absolute bottom-2 right-2 p-1.5 rounded-lg text-white transition-all shadow-md cursor-pointer z-10 ${
+                                downloadingFileNames.has(file.name)
+                                  ? "bg-amber-500/80 text-black opacity-100 animate-pulse"
+                                  : "bg-black/60 hover:bg-cyan-500 hover:text-black opacity-0 group-hover:opacity-100"
+                              }`}
+                              title={downloadingFileNames.has(file.name) ? "Đang chuẩn bị tệp..." : "Tải tệp về máy"}
                             >
-                              <Download className="w-3.5 h-3.5" />
-                            </a>
+                              {downloadingFileNames.has(file.name) ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Download className="w-3.5 h-3.5" />
+                              )}
+                            </button>
 
                             {/* Bottom Left: Catbox Dual-Backup indicator */}
                             {file.catboxUrl && (
@@ -2034,7 +2126,7 @@ export default function DriveApp() {
                                       <ShieldCheck className="w-3 h-3" />
                                       <span className="hidden sm:inline">GitHub</span>
                                     </span>
-                                  ) : (
+                                  ) : adminToken ? (
                                     <button
                                       onClick={() => {
                                         setFileToDelete(file);
@@ -2045,7 +2137,7 @@ export default function DriveApp() {
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </button>
-                                  )}
+                                  ) : null}
                                   <button
                                     onClick={() => setShareModalFile(file)}
                                     className="inline-flex p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/15 cursor-pointer"
@@ -2053,14 +2145,19 @@ export default function DriveApp() {
                                   >
                                     <Share2 className="w-4 h-4" />
                                   </button>
-                                  <a
-                                    href={file.downloadUrl}
-                                    download={file.name}
-                                    className="inline-flex p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/15"
-                                    title="Tải tệp gốc"
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDownloadFile(file, e)}
+                                    disabled={downloadingFileNames.has(file.name)}
+                                    className="inline-flex p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/15 cursor-pointer disabled:opacity-50"
+                                    title={downloadingFileNames.has(file.name) ? "Đang chuẩn bị tệp..." : "Tải tệp gốc"}
                                   >
-                                    <Download className="w-4 h-4" />
-                                  </a>
+                                    {downloadingFileNames.has(file.name) ? (
+                                      <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                                    ) : (
+                                      <Download className="w-4 h-4" />
+                                    )}
+                                  </button>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -2219,38 +2316,50 @@ export default function DriveApp() {
                 <span className="hidden sm:inline">Chia sẻ</span>
               </button>
 
-              {/* Direct Download Button */}
-              <a
-                href={currentLightboxFile.downloadUrl}
-                download={currentLightboxFile.name}
-                className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              {/* Direct Download Button with Anti-spam */}
+              <button
+                type="button"
+                onClick={(e) => handleDownloadFile(currentLightboxFile, e)}
+                disabled={downloadingFileNames.has(currentLightboxFile.name)}
+                className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:bg-amber-500 text-black font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-80"
                 title="Tải tệp gốc về máy"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Tải về</span>
-              </a>
+                {downloadingFileNames.has(currentLightboxFile.name) ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang chuẩn bị...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Tải về</span>
+                  </>
+                )}
+              </button>
 
               {/* Delete / GitHub Protected Indicator */}
-              {currentLightboxFile.isGithub ? (
-                <div
-                  className="px-2.5 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 font-mono text-xs flex items-center gap-1.5 shadow-sm"
-                  title="Tệp lưu trữ trên GitHub được bảo vệ vĩnh viễn, không thể xóa!"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="hidden sm:inline">GitHub (Bảo vệ)</span>
-                </div>
-              ) : (
-                <button
-                  onClick={() => {
-                    setFileToDelete(currentLightboxFile);
-                    setShowDeleteFileModal(true);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-800/80 border border-red-500/40 text-red-300 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Xóa tệp khỏi máy chủ và Catbox"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                  <span className="hidden sm:inline">Xóa tệp</span>
-                </button>
+              {adminToken && (
+                currentLightboxFile.isGithub ? (
+                  <div
+                    className="px-2.5 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 font-mono text-xs flex items-center gap-1.5 shadow-sm"
+                    title="Tệp lưu trữ trên GitHub được bảo vệ vĩnh viễn, không thể xóa!"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="hidden sm:inline">GitHub (Bảo vệ)</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setFileToDelete(currentLightboxFile);
+                      setShowDeleteFileModal(true);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-800/80 border border-red-500/40 text-red-300 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Xóa tệp khỏi máy chủ và Catbox"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    <span className="hidden sm:inline">Xóa tệp</span>
+                  </button>
+                )
               )}
 
               <button
@@ -2359,13 +2468,22 @@ export default function DriveApp() {
                       <p className="text-sm text-gray-400 max-w-md mb-6">
                         Định dạng Word ({currentLightboxFile.ext}). Bạn có thể tải về để mở trực tiếp trong Microsoft Word hoặc Office.
                       </p>
-                      <a
-                        href={currentLightboxFile.downloadUrl}
-                        download={currentLightboxFile.name}
-                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold text-sm flex items-center gap-2 shadow-lg shadow-blue-500/25"
+                      <button
+                        type="button"
+                        onClick={(e) => handleDownloadFile(currentLightboxFile, e)}
+                        disabled={downloadingFileNames.has(currentLightboxFile.name)}
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white rounded-xl font-semibold text-sm flex items-center gap-2 shadow-lg shadow-blue-500/25 cursor-pointer disabled:opacity-75"
                       >
-                        <Download className="w-4 h-4" /> Tải về máy
-                      </a>
+                        {downloadingFileNames.has(currentLightboxFile.name) ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" /> Đang chuẩn bị tệp...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" /> Tải về máy
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -2420,13 +2538,22 @@ export default function DriveApp() {
                   {currentLightboxFile.sizeFormatted} · Định dạng {currentLightboxFile.ext}
                 </p>
                 <div className="flex items-center gap-3">
-                  <a
-                    href={currentLightboxFile.downloadUrl}
-                    download={currentLightboxFile.name}
-                    className="px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-black font-semibold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-cyan-500/20"
+                  <button
+                    type="button"
+                    onClick={(e) => handleDownloadFile(currentLightboxFile, e)}
+                    disabled={downloadingFileNames.has(currentLightboxFile.name)}
+                    className="px-5 py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:bg-amber-500 text-black font-semibold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer disabled:opacity-80"
                   >
-                    <Download className="w-4 h-4" /> Tải về máy
-                  </a>
+                    {downloadingFileNames.has(currentLightboxFile.name) ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" /> Đang chuẩn bị...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" /> Tải về máy
+                      </>
+                    )}
+                  </button>
                   <a
                     href={currentLightboxFile.url}
                     target="_blank"
@@ -2457,7 +2584,7 @@ export default function DriveApp() {
       />
 
       {/* QUICK DIRECT UPLOAD MODAL */}
-      {quickUploadOpen && quickUploadTargetFolder && (
+      {quickUploadOpen && quickUploadTargetFolder && !quickUploadMinimized && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 animate-fadeIn select-none">
           <div className="max-w-lg w-full rounded-2xl bg-[#0b1120] border border-cyan-500/40 p-5 sm:p-6 space-y-4 shadow-2xl relative max-h-[85vh] flex flex-col">
             {/* Header */}
@@ -2477,15 +2604,30 @@ export default function DriveApp() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  if (!isQuickUploading) setQuickUploadOpen(false);
-                }}
-                disabled={isQuickUploading}
-                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer disabled:opacity-40"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Minimize to background button */}
+                <button
+                  onClick={() => setQuickUploadMinimized(true)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-white/10 cursor-pointer transition-colors"
+                  title="Thu nhỏ để tiếp tục làm việc khác (Tải lên ngầm)"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    if (isQuickUploading) {
+                      setQuickUploadMinimized(true);
+                      showToast("Tiến trình tải lên đang tiếp tục chạy ngầm...");
+                    } else {
+                      setQuickUploadOpen(false);
+                    }
+                  }}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
+                  title="Đóng / Ẩn cửa sổ"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Privacy notice banner */}
@@ -2540,25 +2682,92 @@ export default function DriveApp() {
             </div>
 
             {/* Footer Actions */}
-            <div className="pt-3 border-t border-gray-800/80 flex items-center justify-between gap-3 shrink-0">
+            <div className="pt-3 border-t border-gray-800/80 flex items-center justify-between gap-2.5 shrink-0">
               <button
                 type="button"
                 onClick={() => quickFileInputRef.current?.click()}
                 disabled={isQuickUploading}
-                className="px-3.5 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors"
+                className="px-3 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors"
               >
                 <Upload className="w-3.5 h-3.5 text-cyan-400" />
-                <span>+ Thêm tệp khác</span>
+                <span>+ Thêm tệp</span>
               </button>
 
+              <div className="flex items-center gap-2">
+                {isQuickUploading && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickUploadMinimized(true);
+                      showToast("Tiến trình tải lên đang tiếp tục chạy ngầm ở góc màn hình!");
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-gray-800/90 hover:bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 hover:text-cyan-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    <span>Thu nhỏ & Làm việc khác</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isQuickUploading) {
+                      setQuickUploadMinimized(true);
+                    } else {
+                      setQuickUploadOpen(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-bold transition-all cursor-pointer"
+                >
+                  {isQuickUploading ? "Chạy ngầm" : "Xong & Đóng"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING BACKGROUND UPLOAD WIDGET */}
+      {quickUploadMinimized && (isQuickUploading || quickUploadList.length > 0) && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#0d1424]/95 border border-cyan-500/60 backdrop-blur-xl rounded-2xl shadow-[0_10px_35px_rgba(0,0,0,0.85),0_0_20px_rgba(34,211,238,0.2)] p-3.5 max-w-sm w-full animate-slideUp select-none">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center shrink-0">
+                {isQuickUploading ? (
+                  <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                  <span>{isQuickUploading ? "Đang tải lên ngầm..." : "Đã hoàn tất tải lên!"}</span>
+                </p>
+                <p className="text-[10px] text-gray-400 font-mono truncate">
+                  {quickUploadList.filter((f) => f.status === "success").length}/{quickUploadList.length} tệp · {quickUploadTargetFolder?.name}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
-                type="button"
-                onClick={() => setQuickUploadOpen(false)}
-                disabled={isQuickUploading}
-                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+                onClick={() => setQuickUploadMinimized(false)}
+                className="p-1.5 rounded-lg bg-gray-800 hover:bg-cyan-500 hover:text-black text-gray-300 transition-colors cursor-pointer"
+                title="Mở rộng chi tiết"
               >
-                {isQuickUploading ? "Đang xử lý..." : "Xong & Đóng"}
+                <Maximize2 className="w-3.5 h-3.5" />
               </button>
+              {!isQuickUploading && (
+                <button
+                  onClick={() => {
+                    setQuickUploadOpen(false);
+                    setQuickUploadMinimized(false);
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                  title="Đóng widget"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -3129,37 +3338,39 @@ export default function DriveApp() {
                     </div>
                   </button>
 
-                  {/* Delete file (Catbox vs GitHub protected) */}
-                  {contextMenu.file.isGithub ? (
-                    <div
-                      className="w-full px-3 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-3"
-                    >
-                      <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 shrink-0">
-                        <ShieldCheck className="w-4 h-4" />
+                  {/* Delete file (Admin Only) */}
+                  {adminToken && (
+                    contextMenu.file.isGithub ? (
+                      <div
+                        className="w-full px-3 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-3"
+                      >
+                        <div className="p-2 rounded-lg bg-emerald-500/15 text-emerald-400 shrink-0">
+                          <ShieldCheck className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-emerald-300">Tệp GitHub vĩnh viễn</div>
+                          <div className="text-[11px] text-emerald-400/80">Không thể xóa tệp được lưu trên kho lưu trữ GitHub</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-semibold text-emerald-300">Tệp GitHub vĩnh viễn</div>
-                        <div className="text-[11px] text-emerald-400/80">Không thể xóa tệp được lưu trên kho lưu trữ GitHub</div>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        const file = contextMenu.file;
-                        setContextMenu(null);
-                        setFileToDelete(file);
-                        setShowDeleteFileModal(true);
-                      }}
-                      className="w-full px-3 py-3 rounded-xl hover:bg-red-500/15 text-red-400 hover:text-red-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
-                    >
-                      <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
-                        <Trash2 className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-red-400">Xóa tệp</div>
-                        <div className="text-[11px] text-gray-400">Xóa tệp khỏi máy chủ và Catbox.moe</div>
-                      </div>
-                    </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const file = contextMenu.file;
+                          setContextMenu(null);
+                          setFileToDelete(file);
+                          setShowDeleteFileModal(true);
+                        }}
+                        className="w-full px-3 py-3 rounded-xl hover:bg-red-500/15 text-red-400 hover:text-red-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                      >
+                        <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
+                          <Trash2 className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-red-400">Xóa tệp</div>
+                          <div className="text-[11px] text-gray-400">Xóa tệp khỏi máy chủ và Catbox.moe</div>
+                        </div>
+                      </button>
+                    )
                   )}
 
                   <div className="my-1 border-t border-gray-800" />
@@ -3179,18 +3390,20 @@ export default function DriveApp() {
                     <span>Xem tệp trực tiếp</span>
                   </button>
 
-                  {/* Download */}
-                  <a
-                    href={contextMenu.file.downloadUrl}
-                    download={contextMenu.file.name}
-                    onClick={() => setContextMenu(null)}
+                  {/* Download with Anti-spam */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      setContextMenu(null);
+                      handleDownloadFile(contextMenu.file, e);
+                    }}
                     className="w-full px-3 py-2.5 rounded-xl hover:bg-white/5 text-gray-200 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
                   >
                     <div className="p-2 rounded-lg bg-white/5 text-gray-300">
                       <Download className="w-4 h-4" />
                     </div>
                     <span>Tải tệp về máy</span>
-                  </a>
+                  </button>
 
                   {/* Copy Link */}
                   <button
@@ -3268,28 +3481,30 @@ export default function DriveApp() {
                   <span className="font-medium">Chia sẻ tệp</span>
                 </button>
 
-                {/* Delete Option (Catbox vs GitHub protected) */}
-                {contextMenu.file.isGithub ? (
-                  <div
-                    className="w-full px-2.5 py-2 rounded-lg text-gray-500 flex items-center gap-2.5 cursor-not-allowed select-none"
-                    title="Tệp lưu trữ trên GitHub được bảo vệ vĩnh viễn, không thể xóa!"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/70" />
-                    <span className="italic text-[11px]">Bảo vệ bởi GitHub (Không thể xóa)</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      const file = contextMenu.file;
-                      setContextMenu(null);
-                      setFileToDelete(file);
-                      setShowDeleteFileModal(true);
-                    }}
-                    className="w-full px-2.5 py-2 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    <span className="font-medium">Xóa tệp (Catbox & Cục bộ)</span>
-                  </button>
+                {/* Delete Option (Admin Only) */}
+                {adminToken && (
+                  contextMenu.file.isGithub ? (
+                    <div
+                      className="w-full px-2.5 py-2 rounded-lg text-gray-500 flex items-center gap-2.5 cursor-not-allowed select-none"
+                      title="Tệp lưu trữ trên GitHub được bảo vệ vĩnh viễn, không thể xóa!"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500/70" />
+                      <span className="italic text-[11px]">Bảo vệ bởi GitHub (Không thể xóa)</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const file = contextMenu.file;
+                        setContextMenu(null);
+                        setFileToDelete(file);
+                        setShowDeleteFileModal(true);
+                      }}
+                      className="w-full px-2.5 py-2 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      <span className="font-medium">Xóa tệp (Catbox & Cục bộ)</span>
+                    </button>
+                  )
                 )}
 
                 <div className="my-1 border-t border-gray-800" />
@@ -3307,16 +3522,19 @@ export default function DriveApp() {
                   <span>Xem tệp</span>
                 </button>
 
-                {/* Download */}
-                <a
-                  href={contextMenu.file.downloadUrl}
-                  download={contextMenu.file.name}
-                  onClick={() => setContextMenu(null)}
+                {/* Download with Anti-spam */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    const file = contextMenu.file;
+                    setContextMenu(null);
+                    handleDownloadFile(file, e);
+                  }}
                   className="w-full px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5 text-gray-400" />
                   <span>Tải tệp về máy</span>
-                </a>
+                </button>
 
                 {/* Copy Link */}
                 <button

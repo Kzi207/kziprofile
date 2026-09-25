@@ -1,0 +1,62 @@
+[
+  {
+    "id": "1",
+    "name": "img",
+    "folder": "img",
+    "description": "Thư mục lưu ảnh",
+    "isShared": true,
+    "shareToken": "fme-ctut-share-2026",
+    "hasPassword": false,
+    "allowEdit": false,
+    "allowDownload": true,
+    "createdAt": "2026-09-21T00:00:00.000Z",
+    "updatedAt": "2026-09-25T13:51:42.032Z",
+    "sharedFiles": []
+  },
+  {
+    "id": "video",
+    "name": "video",
+    "folder": "video",
+    "description": "",
+    "isShared": true,
+    "shareToken": "video-auto-mugj1xoz",
+    "hasPassword": false,
+    "allowEdit": false,
+    "allowDownload": true,
+    "createdAt": "2026-09-25T05:35:42.035Z",
+    "updatedAt": "2026-09-25T14:05:55.428Z",
+    "sharedFiles": [
+      "họa mây.mp4"
+    ]
+  },
+  {
+    "id": "do-an-ky-thuat-so",
+    "name": "đồ án kỷ thuật số",
+    "folder": "đồ án kỷ thuật số",
+    "description": "",
+    "isShared": true,
+    "shareToken": "do-an-ky-thuat-so-auto-mugjeghi",
+    "hasPassword": false,
+    "allowEdit": false,
+    "allowDownload": true,
+    "createdAt": "2026-09-25T05:45:26.262Z",
+    "updatedAt": "2026-09-25T06:10:04.028Z",
+    "sharedFiles": [
+      "Do_an_bo_nguon_on_ap_5V_12V_2A.docx"
+    ]
+  },
+  {
+    "id": "fme-ctut",
+    "name": "fme-ctut",
+    "folder": "fme-ctut",
+    "description": "Thư mục fme-ctut",
+    "isShared": true,
+    "shareToken": "fme-ctut-auto-mugmqwf7",
+    "hasPassword": false,
+    "allowEdit": false,
+    "allowDownload": true,
+    "sharedFiles": [],
+    "createdAt": "2026-09-25T07:19:05.634Z",
+    "updatedAt": "2026-09-25T07:19:05.634Z"
+  }
+]
