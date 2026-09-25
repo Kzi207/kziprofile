@@ -138,6 +138,10 @@ export default function DriveUploadStation({
 
   // Handle files selection
   const handleFilesChosen = (filesList: FileList | null) => {
+    if (!adminToken) {
+      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải lên tệp!");
+      return;
+    }
     if (!filesList || filesList.length === 0) return;
 
     const newStaged: StagedUploadFile[] = Array.from(filesList).map((f) => {
@@ -181,6 +185,11 @@ export default function DriveUploadStation({
 
   // Upload single file via high-speed FormData
   const uploadSingleFile = async (staged: StagedUploadFile, targetFolder: string) => {
+    if (!adminToken) {
+      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải lên tệp!");
+      return false;
+    }
+
     setStagedFiles((prev) =>
       prev.map((item) =>
         item.id === staged.id
@@ -249,6 +258,11 @@ export default function DriveUploadStation({
 
   // Upload all pending files (with 3-thread parallel concurrency for maximum speed)
   const handleUploadAll = async () => {
+    if (!adminToken) {
+      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải lên tệp!");
+      return;
+    }
+
     const targetFolder = isCreatingNewFolder ? newFolderName.trim() : selectedFolderId;
     if (!targetFolder) {
       showToast("Vui lòng chọn hoặc nhập tên thư mục lưu trữ!");
@@ -285,14 +299,20 @@ export default function DriveUploadStation({
     onRefreshFolders();
   };
 
-  // Run Auto-Repair & Backup sync
+  // Run Auto-Repair & Backup sync (Admin only)
   const handleRunSyncBackup = async () => {
+    if (!adminToken) {
+      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền đồng bộ dữ liệu!");
+      return;
+    }
     setIsSyncing(true);
     setSyncReport(null);
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
       const res = await fetch("/api/drive/sync-backup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ folder: selectedFolderId }),
       });
       const data = await safeParseJson(res, "Lỗi kiểm tra backup");

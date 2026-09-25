@@ -2104,9 +2104,13 @@ app.get("/api/drive/folders", async (req: Request, res: Response) => {
   }
 });
 
-// 2. Create New Folder
+// 2. Create New Folder (Admin Only)
 app.post("/api/drive/folders", async (req: Request, res: Response) => {
   try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên (Admin) mới có quyền tạo thư mục mới." });
+    }
+
     const { name, password, description, allowEdit, allowDownload, isShared } = req.body;
     if (!name || typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ success: false, message: "Vui lòng nhập tên thư mục" });
@@ -2227,7 +2231,7 @@ app.post("/api/drive/folders/unlock", async (req: Request, res: Response) => {
     const unlockToken = jwt.sign(
       { type: "drive_folder_unlock", folderId: folder.id, folderName: folder.name },
       JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "1h" }
     );
 
     return res.json({
@@ -2248,9 +2252,13 @@ app.post("/api/drive/folders/unlock", async (req: Request, res: Response) => {
   }
 });
 
-// 4. Update Folder (Name, Password, Permissions, Sharing)
+// 4. Update Folder (Name, Password, Permissions, Sharing) - Admin Only
 app.put("/api/drive/folders/:id", async (req: Request, res: Response) => {
   try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên (Admin) mới có quyền đổi tên hoặc cập nhật thư mục." });
+    }
+
     const folderId = req.params.id;
     const { name, password, removePassword, description, allowEdit, allowDownload, isShared } = req.body;
 
@@ -2260,9 +2268,32 @@ app.put("/api/drive/folders/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: "Không tìm thấy thư mục" });
     }
 
+    const oldId = String(folder.id);
+    const oldName = folder.name;
+    const oldFolder = folder.folder || oldName || oldId;
+    const isSystemFolder = oldId === "1" || oldId === "img" || oldId.toLowerCase() === "img";
+
+    let newId = oldId;
+
     if (name && typeof name === "string" && name.trim()) {
-      folder.name = name.trim();
+      const trimmedName = name.trim();
+      folder.name = trimmedName;
+      folder.folder = trimmedName;
+
+      if (!isSystemFolder) {
+        let candidateId = slugifyFolderName(trimmedName);
+        if (candidateId !== oldId) {
+          let count = 1;
+          const baseId = candidateId;
+          while (folders.some((f) => String(f.id) !== oldId && (f.id === candidateId || f.folder === candidateId))) {
+            candidateId = `${baseId}-${count++}`;
+          }
+          newId = candidateId;
+          folder.id = newId;
+        }
+      }
     }
+
     if (description !== undefined) {
       folder.description = String(description).trim();
     }
@@ -2290,15 +2321,69 @@ app.put("/api/drive/folders/:id", async (req: Request, res: Response) => {
     folder.updatedAt = new Date().toISOString();
     await saveStoredFolders(folders);
 
+    // If folder was renamed and ID changed, migrate physical folder on disk & drive_files_db records
+    if (!isSystemFolder && newId !== oldId) {
+      try {
+        const oldPaths = [
+          path.join(process.cwd(), "drive", oldFolder),
+          path.join(process.cwd(), "drive", oldId),
+          path.join(process.cwd(), "public", "drive", oldFolder),
+          path.join(process.cwd(), "public", "drive", oldId),
+        ];
+        const newPath = path.join(process.cwd(), "drive", folder.name || newId);
+        for (const op of oldPaths) {
+          if (fs.existsSync(op) && op !== newPath) {
+            if (!fs.existsSync(newPath)) {
+              fs.renameSync(op, newPath);
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Folder physical rename warning:", e);
+      }
+
+      try {
+        const allDbFiles = await getStoredDriveFiles();
+        let changed = false;
+        const oldKeys = new Set([
+          oldId.toLowerCase(),
+          oldName.toLowerCase(),
+          oldFolder.toLowerCase(),
+          slugifyFolderName(oldId),
+          slugifyFolderName(oldName),
+          slugifyFolderName(oldFolder),
+        ]);
+
+        for (const file of allDbFiles) {
+          if (
+            oldKeys.has(file.folderId.toLowerCase()) ||
+            oldKeys.has(slugifyFolderName(file.folderId))
+          ) {
+            file.folderId = newId;
+            file.id = `${newId}:${file.name}`;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await saveStoredDriveFiles(allDbFiles);
+        }
+      } catch (e) {
+        console.warn("DB files migration warning:", e);
+      }
+    }
+
     return res.json({
       success: true,
       message: "Cập nhật thông tin thư mục thành công!",
       data: {
         id: folder.id,
         name: folder.name,
+        folder: folder.folder,
         description: folder.description,
         isShared: folder.isShared,
         shareToken: folder.shareToken,
+        shareUrl: `/drive?share=${folder.id}`,
         hasPassword: !!folder.passwordHash,
         allowEdit: folder.allowEdit,
         allowDownload: folder.allowDownload,
@@ -2813,9 +2898,13 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
   }
 });
 
-// 8. Upload File to Folder (Dual Storage: Local + Catbox.moe + DB)
+// 8. Upload File to Folder (Dual Storage: Local + Catbox.moe + DB) - Admin Only
 app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, res: Response) => {
   try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên (Admin) mới có quyền tải tệp lên!" });
+    }
+
     const folderId = (req.body.folder as string)?.trim() || "fme-ctut";
     let safeName = "";
     let buffer: Buffer;
@@ -2959,9 +3048,13 @@ app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, r
   }
 });
 
-// 8.1. Health Check & Auto-Backup Sync (Repairs 404 on either link)
+// 8.1. Health Check & Auto-Backup Sync (Admin Only)
 app.post("/api/drive/sync-backup", async (req: Request, res: Response) => {
   try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên (Admin) mới có quyền đồng bộ dữ liệu!" });
+    }
+
     const { folder, file } = req.body || {};
     const allFiles = await getStoredDriveFiles();
     let targets = allFiles;

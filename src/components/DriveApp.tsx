@@ -351,7 +351,13 @@ export default function DriveApp() {
   const [isAccessDenied, setIsAccessDenied] = useState(false);
 
   // Navigation, Category Filter & View states
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list">(() => {
+    try {
+      const saved = localStorage.getItem("kzi_cloud_view_mode");
+      if (saved === "grid" || saved === "list") return saved;
+    } catch {}
+    return "list";
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "name-asc" | "name-desc" | "size-desc" | "size-asc">("date-desc");
@@ -412,7 +418,20 @@ export default function DriveApp() {
   const [unlockedFolderIds, setUnlockedFolderIds] = useState<Set<string>>(() => {
     try {
       const saved = sessionStorage.getItem("drive_unlocked_folders");
-      return saved ? new Set(JSON.parse(saved)) : new Set();
+      const timestampsRaw = sessionStorage.getItem("drive_folder_unlock_timestamps");
+      const timestamps = timestampsRaw ? JSON.parse(timestampsRaw) : {};
+      const now = Date.now();
+      const UNLOCK_TTL_MS = 30 * 60 * 1000; // 30 mins TTL
+
+      if (saved) {
+        const list: string[] = JSON.parse(saved);
+        const validList = list.filter((id) => {
+          const t = timestamps[id];
+          return t && now - t < UNLOCK_TTL_MS;
+        });
+        return new Set(validList);
+      }
+      return new Set();
     } catch {
       return new Set();
     }
@@ -523,9 +542,13 @@ export default function DriveApp() {
 
   // Active View Tab: "files" | "upload"
   const isInitialUpload = typeof window !== "undefined" && window.location.pathname === "/drive/upload";
-  const [activeTab, setActiveTab] = useState<"files" | "upload">(isInitialUpload ? "upload" : "files");
+  const [activeTab, setActiveTab] = useState<"files" | "upload">(isInitialUpload && isAdmin ? "upload" : "files");
 
   const switchTab = useCallback((tab: "files" | "upload", targetFolderId?: string) => {
+    if (tab === "upload" && !isAdmin) {
+      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền truy cập trạm tải lên!");
+      return;
+    }
     setActiveTab(tab);
     if (tab === "upload") {
       window.history.pushState(null, "", "/drive/upload");
@@ -536,15 +559,30 @@ export default function DriveApp() {
       }
       window.history.pushState(null, "", "/drive");
     }
-  }, [folders]);
+  }, [folders, isAdmin, showToast]);
+
+  useEffect(() => {
+    if (!isAdmin && activeTab === "upload") {
+      setActiveTab("files");
+    }
+  }, [isAdmin, activeTab]);
 
   useEffect(() => {
     const handlePopState = () => {
-      setActiveTab(window.location.pathname === "/drive/upload" ? "upload" : "files");
+      if (window.location.pathname === "/drive/upload") {
+        if (isAdmin) {
+          setActiveTab("upload");
+        } else {
+          setActiveTab("files");
+          window.history.replaceState(null, "", "/drive");
+        }
+      } else {
+        setActiveTab("files");
+      }
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+  }, [isAdmin]);
 
   // Sync theme
   useEffect(() => {
@@ -577,11 +615,19 @@ export default function DriveApp() {
     }
     try {
       const raw = sessionStorage.getItem("drive_folder_tokens");
+      const timestampsRaw = sessionStorage.getItem("drive_folder_unlock_timestamps");
+      const timestamps = timestampsRaw ? JSON.parse(timestampsRaw) : {};
+      const now = Date.now();
+      const UNLOCK_TTL_MS = 30 * 60 * 1000;
+
       if (raw) {
         const tokens = JSON.parse(raw);
         const folderKey = targetFolderId || activeFolderRef.current?.id || activeFolderRef.current?.name;
         if (folderKey && tokens[folderKey]) {
-          headers["x-drive-unlock-token"] = tokens[folderKey];
+          const t = timestamps[folderKey];
+          if (t && now - t < UNLOCK_TTL_MS) {
+            headers["x-drive-unlock-token"] = tokens[folderKey];
+          }
         }
       }
     } catch {}
@@ -828,6 +874,11 @@ export default function DriveApp() {
       next.add(folderId);
       try {
         sessionStorage.setItem("drive_unlocked_folders", JSON.stringify(Array.from(next)));
+        const timestampsRaw = sessionStorage.getItem("drive_folder_unlock_timestamps");
+        const timestamps = timestampsRaw ? JSON.parse(timestampsRaw) : {};
+        timestamps[folderId] = Date.now();
+        sessionStorage.setItem("drive_folder_unlock_timestamps", JSON.stringify(timestamps));
+
         if (unlockToken) {
           const raw = sessionStorage.getItem("drive_folder_tokens");
           const tokens = raw ? JSON.parse(raw) : {};
@@ -851,6 +902,12 @@ export default function DriveApp() {
           const tokens = JSON.parse(raw);
           delete tokens[folderId];
           sessionStorage.setItem("drive_folder_tokens", JSON.stringify(tokens));
+        }
+        const timestampsRaw = sessionStorage.getItem("drive_folder_unlock_timestamps");
+        if (timestampsRaw) {
+          const timestamps = JSON.parse(timestampsRaw);
+          delete timestamps[folderId];
+          sessionStorage.setItem("drive_folder_unlock_timestamps", JSON.stringify(timestamps));
         }
       } catch {}
       return next;
@@ -913,11 +970,16 @@ export default function DriveApp() {
   // Rename Folder Handler
   const handleRenameFolder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!adminToken) {
+      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền đổi tên thư mục!");
+      return;
+    }
     if (!folderToRename || !renameFolderName.trim()) {
       showToast("Vui lòng nhập tên thư mục!");
       return;
     }
     setIsRenaming(true);
+    const oldFolderId = folderToRename.id;
     try {
       const payload: any = {
         name: renameFolderName.trim(),
@@ -929,7 +991,7 @@ export default function DriveApp() {
         payload.password = renameFolderPassword.trim();
       }
 
-      const res = await fetch(`/api/drive/folders/${encodeURIComponent(folderToRename.id)}`, {
+      const res = await fetch(`/api/drive/folders/${encodeURIComponent(oldFolderId)}`, {
         method: "PUT",
         headers: authHeaders(),
         body: JSON.stringify(payload),
@@ -939,6 +1001,9 @@ export default function DriveApp() {
         throw new Error(data.message || "Đổi tên thư mục thất bại");
       }
 
+      const updatedFolderData = data.data;
+      const newFolderId = updatedFolderData?.id || oldFolderId;
+
       showToast(`Đã cập nhật thư mục "${renameFolderName.trim()}" thành công!`);
       setShowRenameModal(false);
       setFolderToRename(null);
@@ -946,18 +1011,77 @@ export default function DriveApp() {
       setRenameFolderDesc("");
       setRenameFolderPassword("");
       setRenameRemovePassword(false);
+
+      // Migrate unlocked session if ID changed
+      if (newFolderId !== oldFolderId) {
+        setUnlockedFolderIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(oldFolderId)) {
+            next.delete(oldFolderId);
+            next.add(newFolderId);
+            try {
+              sessionStorage.setItem("drive_unlocked_folders", JSON.stringify(Array.from(next)));
+            } catch (_) {}
+          }
+          return next;
+        });
+
+        // Migrate folder token and timestamp in session storage
+        try {
+          const rawTokens = sessionStorage.getItem("drive_folder_tokens");
+          if (rawTokens) {
+            const parsed = JSON.parse(rawTokens);
+            if (parsed[oldFolderId]) {
+              parsed[newFolderId] = parsed[oldFolderId];
+              delete parsed[oldFolderId];
+              sessionStorage.setItem("drive_folder_tokens", JSON.stringify(parsed));
+            }
+          }
+          const rawTimestamps = sessionStorage.getItem("drive_folder_unlock_timestamps");
+          if (rawTimestamps) {
+            const parsedTs = JSON.parse(rawTimestamps);
+            if (parsedTs[oldFolderId]) {
+              parsedTs[newFolderId] = parsedTs[oldFolderId];
+              delete parsedTs[oldFolderId];
+              sessionStorage.setItem("drive_folder_unlock_timestamps", JSON.stringify(parsedTs));
+            }
+          }
+        } catch (_) {}
+
+        // Update URL share/folder param if active
+        try {
+          const currentUrl = new URL(window.location.href);
+          const shareParam = currentUrl.searchParams.get("share");
+          const folderParam = currentUrl.searchParams.get("folder");
+          if (shareParam === oldFolderId || shareParam === encodeURIComponent(oldFolderId)) {
+            currentUrl.searchParams.set("share", newFolderId);
+            window.history.replaceState({}, "", currentUrl.toString());
+          }
+          if (folderParam === oldFolderId || folderParam === encodeURIComponent(oldFolderId)) {
+            currentUrl.searchParams.set("folder", newFolderId);
+            window.history.replaceState({}, "", currentUrl.toString());
+          }
+        } catch (_) {}
+      }
+
       await fetchFolders();
-      if (activeFolder?.id === folderToRename.id) {
-        setActiveFolder((prev) =>
-          prev
+
+      if (activeFolder?.id === oldFolderId) {
+        setActiveFolder(
+          updatedFolderData
             ? {
-                ...prev,
+                ...updatedFolderData,
+                itemCount: activeFolder.itemCount,
+                totalSize: activeFolder.totalSize,
+              }
+            : {
+                ...activeFolder,
+                id: newFolderId,
                 name: renameFolderName.trim(),
                 folder: renameFolderName.trim(),
                 description: renameFolderDesc.trim(),
-                hasPassword: renameRemovePassword ? false : renameFolderPassword.trim() ? true : prev.hasPassword,
+                hasPassword: renameRemovePassword ? false : renameFolderPassword.trim() ? true : activeFolder.hasPassword,
               }
-            : null
         );
       }
     } catch (err: any) {
@@ -969,6 +1093,11 @@ export default function DriveApp() {
 
   // Direct Upload to Current Folder in /drive without navigating to /drive/upload (Fast FormData)
   const uploadFilesDirectly = async (filesList: FileList | File[], targetFolder?: DriveFolder | null) => {
+    if (!adminToken) {
+      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải tệp lên!");
+      return;
+    }
+
     const destinationFolder = targetFolder || activeFolder || folders[0];
     if (!destinationFolder) {
       showToast("Vui lòng chọn một thư mục để tải lên!");
@@ -1199,6 +1328,10 @@ export default function DriveApp() {
   // Create New Folder Handler
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!adminToken) {
+      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tạo thư mục!");
+      return;
+    }
     if (!newFolderName.trim()) {
       showToast("Vui lòng nhập tên thư mục!");
       return;
@@ -1494,7 +1627,7 @@ export default function DriveApp() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col font-sans transition-colors duration-200 select-none ${
+      className={`h-screen max-h-screen overflow-hidden flex flex-col font-sans transition-colors duration-200 select-none ${
         theme === "dark"
           ? "bg-[#080d1a] text-gray-100"
           : "bg-gray-50 text-gray-900"
@@ -1502,7 +1635,7 @@ export default function DriveApp() {
     >
       {/* 1. TOP NAVBAR */}
       <header
-        className={`h-14 sm:h-16 border-b flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30 backdrop-blur-md transition-colors ${
+        className={`h-14 sm:h-16 shrink-0 border-b flex items-center justify-between px-3 sm:px-6 sticky top-0 z-30 backdrop-blur-md transition-colors ${
           theme === "dark"
             ? "border-cyan-500/20 bg-[#080d1a]/85 shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
             : "border-gray-200 bg-white/85 shadow-sm"
@@ -1568,34 +1701,36 @@ export default function DriveApp() {
 
         {/* Right Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Mode Switcher: Kho Tệp vs Tải Lên Dual-Backup */}
-          <div className="flex items-center gap-1 bg-gray-900/90 p-1 rounded-xl border border-gray-800 shrink-0">
-            <button
-              onClick={() => switchTab("files")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                activeTab === "files"
-                  ? "bg-cyan-500 text-black shadow-sm"
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <Folder className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Kho Tệp</span>
-            </button>
-            <button
-              onClick={() => {
-                if (activeFolder) {
-                  quickFileInputRef.current?.click();
-                } else {
-                  switchTab("upload");
-                }
-              }}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer bg-gradient-to-r from-pink-600/90 to-cyan-600/90 hover:from-pink-500 hover:to-cyan-500 text-white shadow-sm shadow-pink-500/20 hover:scale-105 active:scale-95"
-              title={activeFolder ? `Tải lên tệp trực tiếp vào "${activeFolder.name}"` : "Tải lên tệp"}
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Tải Lên{activeFolder ? ` (${activeFolder.name})` : ""}</span>
-            </button>
-          </div>
+          {/* Mode Switcher: Kho Tệp vs Tải Lên Dual-Backup (Admin Only) */}
+          {isAdmin && (
+            <div className="flex items-center gap-1 bg-gray-900/90 p-1 rounded-xl border border-gray-800 shrink-0">
+              <button
+                onClick={() => switchTab("files")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeTab === "files"
+                    ? "bg-cyan-500 text-black shadow-sm"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                <Folder className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Kho Tệp</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (activeFolder) {
+                    quickFileInputRef.current?.click();
+                  } else {
+                    switchTab("upload");
+                  }
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer bg-gradient-to-r from-pink-600/90 to-cyan-600/90 hover:from-pink-500 hover:to-cyan-500 text-white shadow-sm shadow-pink-500/20 hover:scale-105 active:scale-95"
+                title={activeFolder ? `Tải lên tệp trực tiếp vào "${activeFolder.name}"` : "Tải lên tệp"}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Tải Lên{activeFolder ? ` (${activeFolder.name})` : ""}</span>
+              </button>
+            </div>
+          )}
 
           {/* Theme Switcher */}
           <button
@@ -1646,15 +1781,15 @@ export default function DriveApp() {
           adminToken={adminToken}
         />
       ) : (
-        <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 flex overflow-hidden relative min-h-0">
           {/* SIDEBAR FOR FOLDERS */}
           <aside
-            className={`fixed md:static inset-y-0 left-0 z-40 w-64 sm:w-72 bg-[#0c1222] border-r border-gray-800/80 flex flex-col transition-transform duration-300 ${
+            className={`fixed md:static inset-y-0 left-0 z-40 w-64 sm:w-72 h-full shrink-0 bg-[#0c1222] border-r border-gray-800/80 flex flex-col transition-transform duration-300 ${
               mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
             }`}
           >
             {/* Sidebar Header */}
-            <div className="p-4 border-b border-gray-800/80 flex items-center justify-between">
+            <div className="p-4 border-b border-gray-800/80 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2 text-sm font-bold text-gray-200">
                 <HardDrive className="w-4 h-4 text-cyan-400" />
                 <span>Kho Lưu Trữ</span>
@@ -1668,37 +1803,39 @@ export default function DriveApp() {
             </div>
 
             {/* Folder List */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-1">
-              {/* Action Buttons: Upload & New Folder */}
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <button
-                  onClick={() => {
-                    if (activeFolder) {
-                      quickFileInputRef.current?.click();
+            <div className="flex-1 overflow-y-auto p-3 space-y-1 min-h-0">
+              {/* Action Buttons: Upload & New Folder (Admin Only) */}
+              {isAdmin && (
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <button
+                    onClick={() => {
+                      if (activeFolder) {
+                        quickFileInputRef.current?.click();
+                        setMobileSidebarOpen(false);
+                      } else {
+                        switchTab("upload");
+                        setMobileSidebarOpen(false);
+                      }
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 border border-pink-500/40 text-pink-300 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                    title="Tải tệp lên thư mục"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                    <span>+ Tải Lên</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowCreateFolderModal(true);
                       setMobileSidebarOpen(false);
-                    } else {
-                      switchTab("upload");
-                      setMobileSidebarOpen(false);
-                    }
-                  }}
-                  className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 border border-pink-500/40 text-pink-300 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
-                  title="Tải tệp lên thư mục"
-                >
-                  <Upload className="w-3.5 h-3.5 text-pink-400 shrink-0" />
-                  <span>+ Tải Lên</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setShowCreateFolderModal(true);
-                    setMobileSidebarOpen(false);
-                  }}
-                  className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/40 text-cyan-300 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
-                  title="Thêm thư mục mới"
-                >
-                  <FolderPlus className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                  <span>+ Thư Mục</span>
-                </button>
-              </div>
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/40 text-cyan-300 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                    title="Thêm thư mục mới"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span>+ Thư Mục</span>
+                  </button>
+                </div>
+              )}
 
               <button
                 onClick={() => {
@@ -1814,7 +1951,7 @@ export default function DriveApp() {
           </div>
 
           {/* Sidebar Footer info */}
-          <div className="p-3 border-t border-gray-800/80 text-[11px] text-gray-400 flex items-center justify-between">
+          <div className="p-3 border-t border-gray-800/80 text-[11px] text-gray-400 flex items-center justify-between shrink-0">
             <span>Phiên bản 2.5 Cyber</span>
             <span className="font-mono text-cyan-500">100% Nguyên gốc</span>
           </div>
@@ -1829,7 +1966,7 @@ export default function DriveApp() {
         )}
 
         {/* MAIN CONTENT VIEWPORT */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-transparent">
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0 min-h-0 bg-transparent">
           {/* Mobile Search Bar */}
           <div className={`sm:hidden px-3 pt-2.5 pb-0 shrink-0`}>
             <div className="relative">
@@ -1883,7 +2020,10 @@ export default function DriveApp() {
               {/* View Switcher (Grid / List) */}
               <div className="flex items-center gap-1 bg-gray-900/80 p-0.5 rounded-lg border border-gray-800 shrink-0">
                 <button
-                  onClick={() => setViewMode("grid")}
+                  onClick={() => {
+                    setViewMode("grid");
+                    try { localStorage.setItem("kzi_cloud_view_mode", "grid"); } catch (_) {}
+                  }}
                   className={`p-1.5 rounded-md transition-colors cursor-pointer ${
                     viewMode === "grid" ? "bg-cyan-500 text-black shadow-sm" : "text-gray-400 hover:text-white"
                   }`}
@@ -1892,7 +2032,10 @@ export default function DriveApp() {
                   <Grid className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() => setViewMode("list")}
+                  onClick={() => {
+                    setViewMode("list");
+                    try { localStorage.setItem("kzi_cloud_view_mode", "list"); } catch (_) {}
+                  }}
                   className={`p-1.5 rounded-md transition-colors cursor-pointer ${
                     viewMode === "list" ? "bg-cyan-500 text-black shadow-sm" : "text-gray-400 hover:text-white"
                   }`}
@@ -1996,14 +2139,16 @@ export default function DriveApp() {
                     </button>
                   )}
 
-                  <button
-                    onClick={() => quickFileInputRef.current?.click()}
-                    className="px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-pink-500/25 to-cyan-500/25 hover:from-pink-500/40 hover:to-cyan-500/40 border border-pink-500/40 text-pink-300 hover:text-white transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
-                    title={`Tải tệp trực tiếp vào thư mục "${activeFolder.name}"`}
-                  >
-                    <Upload className="w-3.5 h-3.5 text-pink-400" />
-                    <span>+ Tải Lên Tệp</span>
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => quickFileInputRef.current?.click()}
+                      className="px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-pink-500/25 to-cyan-500/25 hover:from-pink-500/40 hover:to-cyan-500/40 border border-pink-500/40 text-pink-300 hover:text-white transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+                      title={`Tải tệp trực tiếp vào thư mục "${activeFolder.name}"`}
+                    >
+                      <Upload className="w-3.5 h-3.5 text-pink-400" />
+                      <span>+ Tải Lên Tệp</span>
+                    </button>
+                  )}
                 </div>
 
                 {isSelectMode && filteredFiles.length > 0 && (
@@ -2059,7 +2204,7 @@ export default function DriveApp() {
           <div
             onDragOver={(e) => {
               e.preventDefault();
-              if (activeFolder) setIsDraggingOverFolder(true);
+              if (isAdmin && activeFolder) setIsDraggingOverFolder(true);
             }}
             onDragLeave={(e) => {
               if (e.currentTarget.contains(e.relatedTarget as Node)) return;
@@ -2068,11 +2213,15 @@ export default function DriveApp() {
             onDrop={(e) => {
               e.preventDefault();
               setIsDraggingOverFolder(false);
+              if (!isAdmin) {
+                showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải tệp lên!");
+                return;
+              }
               if (activeFolder && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                 uploadFilesDirectly(e.dataTransfer.files, activeFolder);
               }
             }}
-            className="flex-1 overflow-y-auto p-3 sm:p-5 relative"
+            className="flex-1 overflow-y-auto p-3 sm:p-5 relative min-h-0"
           >
             {/* Drag & drop overlay indicator */}
             {isDraggingOverFolder && activeFolder && (
@@ -2097,13 +2246,15 @@ export default function DriveApp() {
                     <span>Tất cả Thư mục</span>
                   </h2>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowCreateFolderModal(true)}
-                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer transition-all hover:scale-105 active:scale-95"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5 text-black" />
-                      <span>+ Thêm Thư Mục Mới</span>
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => setShowCreateFolderModal(true)}
+                        className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20 cursor-pointer transition-all hover:scale-105 active:scale-95"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 text-black" />
+                        <span>+ Thêm Thư Mục Mới</span>
+                      </button>
+                    )}
                     <span className="text-xs text-gray-400 font-mono hidden sm:inline">{folders.length} thư mục</span>
                   </div>
                 </div>
@@ -2232,7 +2383,7 @@ export default function DriveApp() {
                         ? "Không tìm thấy tệp phù hợp với từ khóa tìm kiếm."
                         : "Thư mục hiện tại chưa có tài liệu hoặc hình ảnh nào."}
                     </p>
-                    {!searchQuery && (
+                    {!searchQuery && isAdmin && (
                       <button
                         onClick={() => quickFileInputRef.current?.click()}
                         className="mt-3 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 bg-gradient-to-r from-pink-500 to-cyan-500 hover:from-pink-400 hover:to-cyan-400 text-white shadow-lg shadow-pink-500/25 transition-all cursor-pointer hover:scale-105 active:scale-95"
@@ -2971,12 +3122,17 @@ export default function DriveApp() {
         </div>
       )}
 
-      {/* HIDDEN QUICK FILE INPUT */}
+      {/* HIDDEN QUICK FILE INPUT (Admin Only) */}
       <input
         ref={quickFileInputRef}
         type="file"
         multiple
         onChange={(e) => {
+          if (!isAdmin) {
+            showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải tệp lên!");
+            e.target.value = "";
+            return;
+          }
           if (e.target.files && e.target.files.length > 0) {
             uploadFilesDirectly(e.target.files, activeFolder || folders[0]);
             e.target.value = "";
