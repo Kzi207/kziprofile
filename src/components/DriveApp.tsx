@@ -556,12 +556,35 @@ export default function DriveApp() {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
-  // Helper fetch with auth headers
-  const authHeaders = useCallback(() => {
+  const slugifyFolderName = (name: string): string => {
+    return (name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[đĐ]/g, "d")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "folder";
+  };
+
+  const activeFolderRef = useRef<DriveFolder | null>(activeFolder);
+  activeFolderRef.current = activeFolder;
+
+  // Helper fetch with auth headers and folder unlock token
+  const authHeaders = useCallback((targetFolderId?: string) => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (adminToken) {
       headers["Authorization"] = `Bearer ${adminToken}`;
     }
+    try {
+      const raw = sessionStorage.getItem("drive_folder_tokens");
+      if (raw) {
+        const tokens = JSON.parse(raw);
+        const folderKey = targetFolderId || activeFolderRef.current?.id || activeFolderRef.current?.name;
+        if (folderKey && tokens[folderKey]) {
+          headers["x-drive-unlock-token"] = tokens[folderKey];
+        }
+      }
+    } catch {}
     return headers;
   }, [adminToken]);
 
@@ -607,21 +630,101 @@ export default function DriveApp() {
 
       if (fetchedFolders.length > 0) {
         if (shareParam) {
-          const matched =
-            fetchedFolders.find(
-              (f) =>
-                f.id === shareParam ||
-                f.folder === shareParam ||
-                f.shareToken === shareParam
-            ) || fetchedFolders[0];
-          setActiveFolder((prev) => {
-            if (prev && (prev.id === matched.id || prev.folder === matched.folder || prev.name === matched.name || prev.id === shareParam || prev.folder === shareParam)) {
-              return { ...prev, ...matched };
+          const cleanShare = shareParam.trim().toLowerCase();
+          const cleanSlug = slugifyFolderName(cleanShare);
+          const matched = fetchedFolders.find(
+            (f) =>
+              f.id.toLowerCase() === cleanShare ||
+              (f.folder && f.folder.toLowerCase() === cleanShare) ||
+              f.name.toLowerCase() === cleanShare ||
+              (f.shareToken && f.shareToken.toLowerCase() === cleanShare) ||
+              slugifyFolderName(f.id) === cleanSlug ||
+              slugifyFolderName(f.name) === cleanSlug
+          );
+
+          if (!matched) {
+            setIsAccessDenied(true);
+            setErrorMessage(`Không tìm thấy thư mục chia sẻ "${shareParam}" hoặc thư mục chưa được chia sẻ.`);
+            setActiveFolder(null);
+            setFiles([]);
+            return;
+          }
+
+          let isUnlocked = false;
+          try {
+            const saved = sessionStorage.getItem("drive_unlocked_folders");
+            if (saved) {
+              const set = new Set(JSON.parse(saved));
+              if (set.has(matched.id) || set.has(matched.name)) isUnlocked = true;
             }
-            return matched;
-          });
+          } catch {}
+
+          if (matched.hasPassword && !isUnlocked && !adminToken) {
+            setFolderToUnlock(matched);
+            setUnlockPassword("");
+            setUnlockError("");
+            setShowUnlockModal(true);
+            setActiveFolder(null);
+            setFiles([]);
+          } else {
+            setActiveFolder((prev) => {
+              if (prev && (prev.id === matched.id || prev.name === matched.name)) {
+                if (
+                  prev.id === matched.id &&
+                  prev.name === matched.name &&
+                  prev.filesCount === matched.filesCount &&
+                  prev.isShared === matched.isShared &&
+                  prev.hasPassword === matched.hasPassword &&
+                  prev.allowDownload === matched.allowDownload
+                ) {
+                  return prev;
+                }
+                return { ...prev, ...matched };
+              }
+              return matched;
+            });
+          }
         } else {
-          setActiveFolder((prev) => prev || fetchedFolders[0]);
+          setActiveFolder((prev) => {
+            if (prev) {
+              const found = fetchedFolders.find(
+                (f) =>
+                  f.id === prev.id ||
+                  f.name === prev.name ||
+                  slugifyFolderName(f.name) === slugifyFolderName(prev.name)
+              );
+              if (found) {
+                if (
+                  prev.id === found.id &&
+                  prev.name === found.name &&
+                  prev.filesCount === found.filesCount &&
+                  prev.isShared === found.isShared &&
+                  prev.hasPassword === found.hasPassword &&
+                  prev.allowDownload === found.allowDownload
+                ) {
+                  return prev;
+                }
+                return { ...prev, ...found };
+              }
+            }
+            const first = fetchedFolders[0];
+            let isUnlocked = false;
+            try {
+              const saved = sessionStorage.getItem("drive_unlocked_folders");
+              if (saved) {
+                const set = new Set(JSON.parse(saved));
+                if (set.has(first.id) || set.has(first.name)) isUnlocked = true;
+              }
+            } catch {}
+            if (first && first.hasPassword && !isUnlocked && !adminToken) {
+              setFolderToUnlock(first);
+              setUnlockPassword("");
+              setUnlockError("");
+              setShowUnlockModal(true);
+              return null;
+            }
+            return first || null;
+          });
         }
       }
     } catch (err: any) {
@@ -629,10 +732,28 @@ export default function DriveApp() {
     } finally {
       setLoadingFolders(false);
     }
-  }, [authHeaders]);
+  }, [authHeaders, adminToken]);
 
   // Fetch Files
   const fetchFiles = useCallback(async (folder: DriveFolder) => {
+    let isUnlocked = false;
+    try {
+      const saved = sessionStorage.getItem("drive_unlocked_folders");
+      if (saved) {
+        const set = new Set(JSON.parse(saved));
+        if (set.has(folder.id) || set.has(folder.name)) isUnlocked = true;
+      }
+    } catch {}
+
+    if (folder.hasPassword && !isUnlocked && !adminToken) {
+      setFolderToUnlock(folder);
+      setUnlockPassword("");
+      setUnlockError("");
+      setShowUnlockModal(true);
+      setFiles([]);
+      return;
+    }
+
     setLoadingFiles(true);
     setSelectedFileNames(new Set());
     setIsSelectMode(false);
@@ -640,16 +761,15 @@ export default function DriveApp() {
 
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const shareParam = urlParams.get("share") || folder.id || folder.folder || "1";
       const fileParam = urlParams.get("file");
 
-      let apiUrl = `/api/drive/files?folder=${encodeURIComponent(shareParam)}`;
+      let apiUrl = `/api/drive/files?folder=${encodeURIComponent(folder.id)}`;
       if (fileParam) {
         apiUrl += `&file=${encodeURIComponent(fileParam)}`;
       }
 
       const res = await fetch(apiUrl, {
-        headers: authHeaders(),
+        headers: authHeaders(folder.id),
       });
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
@@ -657,6 +777,14 @@ export default function DriveApp() {
       }
       const data = await res.json();
       if (!res.ok || !data.success) {
+        if (data.requirePassword || res.status === 401) {
+          setFolderToUnlock(folder);
+          setUnlockPassword("");
+          setUnlockError("");
+          setShowUnlockModal(true);
+          setFiles([]);
+          return;
+        }
         if (res.status === 403) {
           setIsAccessDenied(true);
           setErrorMessage(data.message || "Bạn không có quyền truy cập vào thư mục này.");
@@ -681,7 +809,7 @@ export default function DriveApp() {
     } finally {
       setLoadingFiles(false);
     }
-  }, [authHeaders, showToast]);
+  }, [authHeaders, showToast, adminToken]);
 
   // Convert file to base64
   const fileToBase64 = (file: File): Promise<string> => {
@@ -694,12 +822,18 @@ export default function DriveApp() {
   };
 
   // Helper to mark a folder unlocked for this session
-  const markFolderUnlocked = (folderId: string) => {
+  const markFolderUnlocked = (folderId: string, unlockToken?: string) => {
     setUnlockedFolderIds((prev) => {
       const next = new Set(prev);
       next.add(folderId);
       try {
         sessionStorage.setItem("drive_unlocked_folders", JSON.stringify(Array.from(next)));
+        if (unlockToken) {
+          const raw = sessionStorage.getItem("drive_folder_tokens");
+          const tokens = raw ? JSON.parse(raw) : {};
+          tokens[folderId] = unlockToken;
+          sessionStorage.setItem("drive_folder_tokens", JSON.stringify(tokens));
+        }
       } catch {}
       return next;
     });
@@ -712,6 +846,12 @@ export default function DriveApp() {
       next.delete(folderId);
       try {
         sessionStorage.setItem("drive_unlocked_folders", JSON.stringify(Array.from(next)));
+        const raw = sessionStorage.getItem("drive_folder_tokens");
+        if (raw) {
+          const tokens = JSON.parse(raw);
+          delete tokens[folderId];
+          sessionStorage.setItem("drive_folder_tokens", JSON.stringify(tokens));
+        }
       } catch {}
       return next;
     });
@@ -737,7 +877,7 @@ export default function DriveApp() {
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Mật khẩu không chính xác!");
       }
-      markFolderUnlocked(folderToUnlock.id);
+      markFolderUnlocked(folderToUnlock.id, data.unlockToken);
       setShowUnlockModal(false);
       const unlockedTarget = folderToUnlock;
       setFolderToUnlock(null);
@@ -758,11 +898,8 @@ export default function DriveApp() {
       return;
     }
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const isPublicBypass = urlParams.get("open") === "public" || urlParams.get("mode") === "public";
-
     // If folder is password protected and hasn't been unlocked yet
-    if (folder.hasPassword && !unlockedFolderIds.has(folder.id) && !isPublicBypass) {
+    if (folder.hasPassword && !unlockedFolderIds.has(folder.id) && !adminToken) {
       setFolderToUnlock(folder);
       setUnlockPassword("");
       setUnlockError("");
@@ -943,7 +1080,7 @@ export default function DriveApp() {
     } else {
       setFiles([]);
     }
-  }, [activeFolder, fetchFiles]);
+  }, [activeFolder?.id, activeFolder?.name, fetchFiles]);
 
   // Handle Login
   const handleLogin = async (e: React.FormEvent) => {
@@ -3097,92 +3234,19 @@ export default function DriveApp() {
               {shareModalFolder.isShared ? (
                 <div className="space-y-3.5">
                   {shareModalFolder.hasPassword ? (
-                    <>
-                      {/* OPTION 1: Public Bypass (No Password Required) */}
-                      <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/40 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                            <Unlock className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Tùy chọn 1: Chia sẻ Công khai (Không cần MK)</span>
-                          </span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
-                            Vào thẳng
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-gray-400 leading-tight">
-                          Người nhận mở liên kết sẽ <strong>vào xem & tải tệp ngay</strong> mà không cần nhập mật khẩu.
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            readOnly
-                            value={`${window.location.origin}/drive?share=${encodeURIComponent(
-                              shareModalFolder.id
-                            )}&open=public`}
-                            className="flex-1 bg-gray-900/90 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-mono focus:outline-none truncate"
-                          />
-                          <button
-                            onClick={() => {
-                              const link = `${window.location.origin}/drive?share=${encodeURIComponent(
-                                shareModalFolder.id
-                              )}&open=public`;
-                              navigator.clipboard.writeText(link);
-                              setShareCopied("public" as any);
-                              showToast("Đã chép liên kết chia sẻ công khai!");
-                              setTimeout(() => setShareCopied(false), 2000);
-                            }}
-                            className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-lg flex items-center gap-1 transition-all cursor-pointer shrink-0"
-                          >
-                            {(shareCopied as any) === "public" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>{(shareCopied as any) === "public" ? "Đã chép" : "Sao chép"}</span>
-                          </button>
-                        </div>
+                    <div className="p-3.5 rounded-xl bg-amber-950/25 border border-amber-500/40 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                          <Lock className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Chia sẻ Có Mật Khẩu (Bảo vệ 🔐)</span>
+                        </span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                          Yêu cầu mật khẩu
+                        </span>
                       </div>
-
-                      {/* OPTION 2: Password Protected (Requires Password) */}
-                      <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/40 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                            <Lock className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Tùy chọn 2: Chia sẻ Có Mật Khẩu (Cần MK mới vào)</span>
-                          </span>
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
-                            Bảo vệ 🔐
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-gray-400 leading-tight">
-                          Người nhận mở link <strong>bắt buộc phải nhập đúng mật khẩu</strong> của thư mục mới được vào xem nội dung.
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            readOnly
-                            value={`${window.location.origin}/drive?share=${encodeURIComponent(
-                              shareModalFolder.id
-                            )}&mode=protected`}
-                            className="flex-1 bg-gray-900/90 border border-amber-500/30 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 font-mono focus:outline-none truncate"
-                          />
-                          <button
-                            onClick={() => {
-                              const link = `${window.location.origin}/drive?share=${encodeURIComponent(
-                                shareModalFolder.id
-                              )}&mode=protected`;
-                              navigator.clipboard.writeText(link);
-                              setShareCopied("protected" as any);
-                              showToast("Đã chép liên kết chia sẻ có mật khẩu!");
-                              setTimeout(() => setShareCopied(false), 2000);
-                            }}
-                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-lg flex items-center gap-1 transition-all cursor-pointer shrink-0"
-                          >
-                            {(shareCopied as any) === "protected" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>{(shareCopied as any) === "protected" ? "Đã chép" : "Sao chép"}</span>
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="space-y-2">
-                      <label className="text-xs text-gray-400">Liên kết chia sẻ khách (Chỉ xem):</label>
+                      <p className="text-[11px] text-gray-300 leading-tight">
+                        Thư mục này được cài mật khẩu bảo vệ. Bất kỳ ai mở liên kết này <strong>bắt buộc phải nhập đúng mật khẩu</strong> mới có thể xem và tải tệp.
+                      </p>
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
@@ -3190,7 +3254,7 @@ export default function DriveApp() {
                           value={`${window.location.origin}/drive?share=${encodeURIComponent(
                             shareModalFolder.id
                           )}`}
-                          className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-xs text-cyan-300 font-mono focus:outline-none"
+                          className="flex-1 bg-gray-900/90 border border-amber-500/40 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 font-mono focus:outline-none truncate"
                         />
                         <button
                           onClick={() => {
@@ -3199,24 +3263,61 @@ export default function DriveApp() {
                             )}`;
                             navigator.clipboard.writeText(link);
                             setShareCopied(true);
-                            showToast("Đã sao chép liên kết vào bộ nhớ tạm!");
+                            showToast("Đã sao chép liên kết chia sẻ (Có mật khẩu)!");
                             setTimeout(() => setShareCopied(false), 2000);
                           }}
-                          className="px-3 py-2 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-lg flex items-center gap-1 transition-all cursor-pointer shrink-0 shadow-sm"
                         >
                           {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                           <span>{shareCopied ? "Đã chép" : "Sao chép"}</span>
                         </button>
                       </div>
-                      <p className="text-[11px] text-gray-500">
-                        ℹ️ Thư mục này hiện không có mật khẩu. Bạn có thể cài đặt mật khẩu trong phần <strong>Đổi Tên & Cài đặt</strong>.
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-cyan-950/25 border border-cyan-500/40 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                          <Unlock className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Chia sẻ Công Khai (Không cần MK 🌐)</span>
+                        </span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+                          Công khai
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-300 leading-tight">
+                        Thư mục không cài mật khẩu. Bất kỳ ai có liên kết đều có thể mở xem và tải tệp trực tiếp.
                       </p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${window.location.origin}/drive?share=${encodeURIComponent(
+                            shareModalFolder.id
+                          )}`}
+                          className="flex-1 bg-gray-900/90 border border-cyan-500/40 rounded-lg px-2.5 py-1.5 text-xs text-cyan-300 font-mono focus:outline-none truncate"
+                        />
+                        <button
+                          onClick={() => {
+                            const link = `${window.location.origin}/drive?share=${encodeURIComponent(
+                              shareModalFolder.id
+                            )}`;
+                            navigator.clipboard.writeText(link);
+                            setShareCopied(true);
+                            showToast("Đã sao chép liên kết chia sẻ công khai!");
+                            setTimeout(() => setShareCopied(false), 2000);
+                          }}
+                          className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-sm"
+                        >
+                          {shareCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{shareCopied ? "Đã chép" : "Sao chép"}</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
-                  Thư mục này hiện tại không chia sẻ công khai. Người ngoài khi truy cập qua URL sẽ bị chặn với mã 403 Forbidden.
+                  Thư mục này hiện tại không chia sẻ. Người ngoài khi truy cập qua URL sẽ bị chặn với mã 403 Forbidden.
                 </div>
               )}
             </div>

@@ -1362,6 +1362,40 @@ function checkIsAdmin(req: Request): boolean {
   }
 }
 
+function checkIsFolderUnlocked(req: Request, folder: DriveFolderMeta | null): boolean {
+  if (!folder) return true;
+  if (!folder.passwordHash) return true;
+  if (checkIsAdmin(req)) return true;
+
+  const unlockToken =
+    (req.headers["x-drive-unlock-token"] as string) ||
+    (req.headers["x-unlock-token"] as string) ||
+    (req.query.unlockToken as string);
+
+  if (unlockToken) {
+    try {
+      const decoded = jwt.verify(unlockToken, JWT_SECRET) as any;
+      if (
+        decoded &&
+        decoded.type === "drive_folder_unlock" &&
+        (String(decoded.folderId).toLowerCase() === String(folder.id).toLowerCase() ||
+          String(decoded.folderId).toLowerCase() === String(folder.name).toLowerCase() ||
+          slugifyFolderName(String(decoded.folderId)) === slugifyFolderName(String(folder.id)) ||
+          slugifyFolderName(String(decoded.folderId)) === slugifyFolderName(String(folder.name)))
+      ) {
+        return true;
+      }
+    } catch {}
+  }
+
+  const directPass = req.headers["x-folder-password"] as string;
+  if (directPass && bcryptjs.compareSync(directPass.trim(), folder.passwordHash)) {
+    return true;
+  }
+
+  return false;
+}
+
 function getEffectiveGithubToken(req: Request): string | null {
   const headerToken = req.headers["x-github-token"] as string;
   if (headerToken && headerToken.trim()) return headerToken.trim();
@@ -1527,12 +1561,18 @@ async function saveStoredFolders(folders: DriveFolderMeta[]): Promise<void> {
 
 async function resolveFolder(folderKey: string): Promise<{ folder: DriveFolderMeta | null; folderName: string; localDirs: string[] }> {
   const folders = await getStoredFolders();
+  const rawKey = String(folderKey || "").trim();
+  const slugKey = slugifyFolderName(rawKey);
+
   const matched = folders.find(
     (f: any) =>
-      String(f.id) === String(folderKey) ||
-      f.folder === folderKey ||
-      f.name === folderKey ||
-      f.shareToken === folderKey
+      String(f.id).toLowerCase() === rawKey.toLowerCase() ||
+      String(f.folder || "").toLowerCase() === rawKey.toLowerCase() ||
+      String(f.name || "").toLowerCase() === rawKey.toLowerCase() ||
+      String(f.shareToken || "").toLowerCase() === rawKey.toLowerCase() ||
+      slugifyFolderName(String(f.id)) === slugKey ||
+      slugifyFolderName(String(f.name)) === slugKey ||
+      slugifyFolderName(String(f.folder || "")) === slugKey
   ) || null;
 
   const rawName = matched ? (matched.folder || matched.name || matched.id) : folderKey;
@@ -2184,9 +2224,16 @@ app.post("/api/drive/folders/unlock", async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: "Mật khẩu không chính xác!" });
     }
 
+    const unlockToken = jwt.sign(
+      { type: "drive_folder_unlock", folderId: folder.id, folderName: folder.name },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
     return res.json({
       success: true,
       unlocked: true,
+      unlockToken,
       message: "Mở khóa thư mục thành công!",
       folder: {
         id: folder.id,
@@ -2452,14 +2499,26 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
       folder.sharedFiles.some((f) => f.toLowerCase() === requestedFile.toLowerCase())
     );
 
-    // ACCESS CONTROL: Visitors with public share tokens only access if folder or file is shared
-    if (!isAdmin && (req.query.share || (folder && folder.shareToken === folderKey))) {
+    // ACCESS CONTROL 1: Non-admin visitors must have folder shared or specific file shared
+    if (!isAdmin) {
       if (!folder || (!folder.isShared && !isFileSpecificallyShared)) {
         return res.status(403).json({
           success: false,
-          message: "Truy cập bị từ chối: Tệp hoặc Thư mục này chưa được Quản trị viên (Admin) chia sẻ.",
+          message: "Truy cập bị từ chối: Thư mục này chưa được Quản trị viên (Admin) chia sẻ hoặc đã bị đóng.",
         });
       }
+    }
+
+    // ACCESS CONTROL 2: Password-protected folders REQUIRE unlock verification (cannot be bypassed by URL or query param!)
+    if (folder && folder.passwordHash && !checkIsFolderUnlocked(req, folder)) {
+      return res.status(401).json({
+        success: false,
+        requirePassword: true,
+        folderId: folder.id,
+        folderName: folder.name,
+        message: `Thư mục "${folder.name}" đã được đặt mật khẩu. Vui lòng nhập mật khẩu để mở khóa xem tệp.`,
+        data: [],
+      });
     }
 
     const fileMap = new Map<string, any>();
@@ -2639,11 +2698,16 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
       return res.status(403).send("Thư mục này không cho phép tải xuống.");
     }
 
-    // 2. If accessing via a guest share token/link and neither folder nor file is shared
-    if (req.query.share && !isAdmin) {
+    // 2. If requester is guest and folder or file is not shared
+    if (!isAdmin) {
       if (!folder?.isShared && !isFileSpecificallyShared) {
         return res.status(403).send("Truy cập bị từ chối: Tệp này chưa được Quản trị viên chia sẻ.");
       }
+    }
+
+    // 3. If folder has password, requester must be unlocked
+    if (folder && folder.passwordHash && !checkIsFolderUnlocked(req, folder)) {
+      return res.status(401).send("Thư mục được bảo vệ bằng mật khẩu. Vui lòng mở khóa trước khi tải xuống.");
     }
 
     const safeName = path.basename(filename);

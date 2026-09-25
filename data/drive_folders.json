@@ -4,13 +4,13 @@
     "name": "img",
     "folder": "img",
     "description": "Thư mục lưu ảnh",
-    "isShared": true,
+    "isShared": false,
     "shareToken": "fme-ctut-share-2026",
     "hasPassword": false,
     "allowEdit": false,
     "allowDownload": true,
     "createdAt": "2026-09-21T00:00:00.000Z",
-    "updatedAt": "2026-09-25T13:51:42.032Z",
+    "updatedAt": "2026-09-25T15:13:40.512Z",
     "sharedFiles": []
   },
   {
