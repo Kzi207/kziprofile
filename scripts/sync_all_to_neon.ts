@@ -92,6 +92,23 @@ async function main() {
   });
   console.log("✅ drive_files_db đã lưu vào Neon:", JSON.parse(driveFilesContent).length, "tệp");
 
+  // 3.1. DRIVE ACCOUNTS
+  const driveAccountsPath = path.join(process.cwd(), "data", "drive_accounts.json");
+  let driveAccountsContent = "[]";
+  if (fs.existsSync(driveAccountsPath)) {
+    driveAccountsContent = fs.readFileSync(driveAccountsPath, "utf-8");
+  }
+  await prisma.setting.upsert({
+    where: { key: "drive_accounts" },
+    update: { value: driveAccountsContent, updatedAt: new Date() },
+    create: {
+      key: "drive_accounts",
+      value: driveAccountsContent,
+      description: "Danh sách tài khoản tải lên Drive Metadata (Đồng bộ Neon)",
+    },
+  });
+  console.log("✅ drive_accounts đã lưu vào Neon:", JSON.parse(driveAccountsContent).length, "tài khoản");
+
   // 4. SITE SETTINGS
   const defaultSettings = [
     { key: "site_title", value: "Kzi // Anime Cyberpunk Drive & Portfolio", description: "Tiêu đề trang web" },

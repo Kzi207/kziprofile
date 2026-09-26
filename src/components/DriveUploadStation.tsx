@@ -139,7 +139,7 @@ export default function DriveUploadStation({
   // Handle files selection
   const handleFilesChosen = (filesList: FileList | null) => {
     if (!adminToken) {
-      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải lên tệp!");
+      showToast("❌ Vui lòng đăng nhập tài khoản có quyền để tải lên tệp!");
       return;
     }
     if (!filesList || filesList.length === 0) return;
@@ -186,7 +186,7 @@ export default function DriveUploadStation({
   // Upload single file via high-speed FormData
   const uploadSingleFile = async (staged: StagedUploadFile, targetFolder: string) => {
     if (!adminToken) {
-      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải lên tệp!");
+      showToast("❌ Vui lòng đăng nhập tài khoản có quyền để tải lên tệp!");
       return false;
     }
 

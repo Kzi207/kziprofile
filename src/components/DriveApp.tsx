@@ -57,8 +57,25 @@ import {
   Key,
   Unlock,
   EyeOff,
+  User,
+  Users,
+  UserPlus,
+  UserCheck,
+  UserX,
+  KeyRound,
 } from "lucide-react";
 import DriveUploadStation from "./DriveUploadStation";
+
+export interface DriveAccountItem {
+  id: string;
+  username: string;
+  name: string;
+  role: "admin" | "uploader" | "user";
+  canUpload: boolean;
+  allowedFolders: string[];
+  createdAt: string;
+  updatedAt?: string;
+}
 
 export interface DriveFolder {
   id: string;
@@ -309,13 +326,14 @@ export default function DriveApp() {
     return (localStorage.getItem("kzi_cloud_theme") as "dark" | "light") || "dark";
   });
 
-  // Admin Auth state
+  // User Authentication state (Admin & Upload Accounts)
   const [adminToken, setAdminToken] = useState<string | null>(() => {
-    return localStorage.getItem("cyber_auth_token") || localStorage.getItem("drive_admin_token") || null;
+    return localStorage.getItem("drive_auth_token") || localStorage.getItem("cyber_auth_token") || localStorage.getItem("drive_admin_token") || null;
   });
-  const [adminUser, setAdminUser] = useState<any>(() => {
+  const [currentUser, setCurrentUser] = useState<any>(() => {
     try {
-      return JSON.parse(localStorage.getItem("drive_admin_user") || "{}");
+      const saved = localStorage.getItem("drive_current_user") || localStorage.getItem("drive_admin_user");
+      return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
     }
@@ -325,6 +343,29 @@ export default function DriveApp() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
+
+  // Drive Accounts Management states (Admin Only)
+  const [showAccountsModal, setShowAccountsModal] = useState(false);
+  const [accountsList, setAccountsList] = useState<DriveAccountItem[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [accountSearchQuery, setAccountSearchQuery] = useState("");
+
+  // Create / Edit Account Modal states
+  const [showAccountFormModal, setShowAccountFormModal] = useState(false);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [formAccUsername, setFormAccUsername] = useState("");
+  const [formAccPassword, setFormAccPassword] = useState("");
+  const [formAccName, setFormAccName] = useState("");
+  const [formAccRole, setFormAccRole] = useState<"uploader" | "admin">("uploader");
+  const [formAccCanUpload, setFormAccCanUpload] = useState(true);
+  const [formAccAllowedAll, setFormAccAllowedAll] = useState(true);
+  const [formAccSelectedFolders, setFormAccSelectedFolders] = useState<string[]>([]);
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+  const [accountFormError, setAccountFormError] = useState("");
+
+  // Delete Account Confirmation state
+  const [accountToDelete, setAccountToDelete] = useState<DriveAccountItem | null>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   // App & Data states
   const [folders, setFolders] = useState<DriveFolder[]>([]);
@@ -538,15 +579,45 @@ export default function DriveApp() {
     }, 3000);
   }, [activeFolder?.id, downloadingFileNames, showToast]);
 
-  const isAdmin = useMemo(() => !!adminToken, [adminToken]);
+  const isAdmin = useMemo(() => {
+    if (!adminToken) return false;
+    if (adminToken.startsWith("local_admin_session_token_")) return true;
+    if (currentUser?.role === "admin") return true;
+    if (currentUser && currentUser.isDriveAccount === false) return true;
+    return !!adminToken && !currentUser?.isDriveAccount;
+  }, [adminToken, currentUser]);
+
+  const canUpload = useMemo(() => {
+    if (isAdmin) return true;
+    if (currentUser && currentUser.canUpload !== false) return true;
+    return false;
+  }, [isAdmin, currentUser]);
+
+  const canUploadToFolder = useCallback((targetFolder: DriveFolder | null): boolean => {
+    if (isAdmin) return true;
+    if (!currentUser || currentUser.canUpload === false) return false;
+    if (!targetFolder) return false;
+    if (currentUser.allowedFolders?.includes("*")) return true;
+    const fId = String(targetFolder.id || "").toLowerCase();
+    const fName = String(targetFolder.name || "").toLowerCase();
+    const fFolder = String(targetFolder.folder || "").toLowerCase();
+    const isAllowedSpecific = currentUser.allowedFolders?.some((af: string) => {
+      const afLow = af.toLowerCase();
+      return afLow === fId || afLow === fName || afLow === fFolder || afLow === "*";
+    });
+    if (isAllowedSpecific) return true;
+    if (targetFolder.isShared) return true;
+    return false;
+  }, [isAdmin, currentUser]);
 
   // Active View Tab: "files" | "upload"
   const isInitialUpload = typeof window !== "undefined" && window.location.pathname === "/drive/upload";
-  const [activeTab, setActiveTab] = useState<"files" | "upload">(isInitialUpload && isAdmin ? "upload" : "files");
+  const [activeTab, setActiveTab] = useState<"files" | "upload">(isInitialUpload && canUpload ? "upload" : "files");
 
   const switchTab = useCallback((tab: "files" | "upload", targetFolderId?: string) => {
-    if (tab === "upload" && !isAdmin) {
-      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền truy cập trạm tải lên!");
+    if (tab === "upload" && !canUpload) {
+      showToast("❌ Vui lòng đăng nhập tài khoản được cấp quyền để truy cập trạm tải lên!");
+      setShowLoginModal(true);
       return;
     }
     setActiveTab(tab);
@@ -559,18 +630,18 @@ export default function DriveApp() {
       }
       window.history.pushState(null, "", "/drive");
     }
-  }, [folders, isAdmin, showToast]);
+  }, [folders, canUpload, showToast]);
 
   useEffect(() => {
-    if (!isAdmin && activeTab === "upload") {
+    if (!canUpload && activeTab === "upload") {
       setActiveTab("files");
     }
-  }, [isAdmin, activeTab]);
+  }, [canUpload, activeTab]);
 
   useEffect(() => {
     const handlePopState = () => {
       if (window.location.pathname === "/drive/upload") {
-        if (isAdmin) {
+        if (canUpload) {
           setActiveTab("upload");
         } else {
           setActiveTab("files");
@@ -705,10 +776,11 @@ export default function DriveApp() {
             }
           } catch {}
 
-          if (matched.hasPassword && !isUnlocked && !adminToken) {
+          if (matched.hasPassword && !isUnlocked) {
             setFolderToUnlock(matched);
             setUnlockPassword("");
             setUnlockError("");
+            setShowUnlockPasswordText(false);
             setShowUnlockModal(true);
             setActiveFolder(null);
             setFiles([]);
@@ -762,11 +834,7 @@ export default function DriveApp() {
                 if (set.has(first.id) || set.has(first.name)) isUnlocked = true;
               }
             } catch {}
-            if (first && first.hasPassword && !isUnlocked && !adminToken) {
-              setFolderToUnlock(first);
-              setUnlockPassword("");
-              setUnlockError("");
-              setShowUnlockModal(true);
+            if (first && first.hasPassword && !isUnlocked) {
               return null;
             }
             return first || null;
@@ -791,10 +859,11 @@ export default function DriveApp() {
       }
     } catch {}
 
-    if (folder.hasPassword && !isUnlocked && !adminToken) {
+    if (folder.hasPassword && !isUnlocked) {
       setFolderToUnlock(folder);
       setUnlockPassword("");
       setUnlockError("");
+      setShowUnlockPasswordText(false);
       setShowUnlockModal(true);
       setFiles([]);
       return;
@@ -891,7 +960,7 @@ export default function DriveApp() {
   };
 
   // Helper to lock a folder again
-  const lockFolder = (folderId: string) => {
+  const lockFolder = (folderId: string, notify = true) => {
     setUnlockedFolderIds((prev) => {
       const next = new Set(prev);
       next.delete(folderId);
@@ -912,7 +981,18 @@ export default function DriveApp() {
       } catch {}
       return next;
     });
-    showToast("Đã khóa lại thư mục!");
+    if (notify) {
+      showToast("🔒 Đã khóa lại thư mục!");
+    }
+  };
+
+  // Helper to exit current folder and lock it immediately if protected
+  const handleExitToAllFolders = () => {
+    if (activeFolder && activeFolder.hasPassword) {
+      lockFolder(activeFolder.id, false);
+    }
+    setActiveFolder(null);
+    setFiles([]);
   };
 
   // Folder unlock handler
@@ -934,6 +1014,12 @@ export default function DriveApp() {
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Mật khẩu không chính xác!");
       }
+
+      // If switching from another password-protected folder, lock the previous one
+      if (activeFolder && activeFolder.id !== folderToUnlock.id && activeFolder.hasPassword) {
+        lockFolder(activeFolder.id, false);
+      }
+
       markFolderUnlocked(folderToUnlock.id, data.unlockToken);
       setShowUnlockModal(false);
       const unlockedTarget = folderToUnlock;
@@ -948,18 +1034,32 @@ export default function DriveApp() {
     }
   };
 
-  // Safe Folder Click Handler (Prompts for password if locked)
+  // Safe Folder Click Handler (Auto-locks on exit/switch & prompts for password)
   const handleSelectFolder = (folder: DriveFolder | null) => {
     if (!folder) {
-      setActiveFolder(null);
+      handleExitToAllFolders();
       return;
     }
 
-    // If folder is password protected and hasn't been unlocked yet
-    if (folder.hasPassword && !unlockedFolderIds.has(folder.id) && !adminToken) {
+    // If switching away from a password-protected folder, lock the previous one immediately!
+    if (activeFolder && activeFolder.id !== folder.id && activeFolder.hasPassword) {
+      lockFolder(activeFolder.id, false);
+    }
+
+    // If clicking on the currently open folder
+    if (activeFolder && (activeFolder.id === folder.id || activeFolder.name === folder.name)) {
+      return;
+    }
+
+    const isUnlocked = unlockedFolderIds.has(folder.id) || unlockedFolderIds.has(folder.name);
+
+    // If target folder is password protected and hasn't been unlocked yet:
+    // Prompt for password immediately
+    if (folder.hasPassword && !isUnlocked) {
       setFolderToUnlock(folder);
       setUnlockPassword("");
       setUnlockError("");
+      setShowUnlockPasswordText(false);
       setShowUnlockModal(true);
       return;
     }
@@ -1093,14 +1193,15 @@ export default function DriveApp() {
 
   // Direct Upload to Current Folder in /drive without navigating to /drive/upload (Fast FormData)
   const uploadFilesDirectly = async (filesList: FileList | File[], targetFolder?: DriveFolder | null) => {
-    if (!adminToken) {
-      showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải tệp lên!");
-      return;
-    }
-
     const destinationFolder = targetFolder || activeFolder || folders[0];
     if (!destinationFolder) {
       showToast("Vui lòng chọn một thư mục để tải lên!");
+      return;
+    }
+
+    if (!canUploadToFolder(destinationFolder)) {
+      showToast("❌ Bạn cần đăng nhập tài khoản có quyền tải lên để thêm tệp vào thư mục này!");
+      setShowLoginModal(true);
       return;
     }
 
@@ -1199,6 +1300,150 @@ export default function DriveApp() {
     fetchFolders();
   };
 
+  // Drive Accounts Management API Handlers (Admin Only)
+  const fetchAccounts = useCallback(async () => {
+    if (!adminToken) return;
+    setLoadingAccounts(true);
+    try {
+      const res = await fetch("/api/drive/accounts", {
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAccountsList(data.data || []);
+      }
+    } catch (e: any) {
+      console.warn("Lỗi tải danh sách tài khoản:", e.message);
+    } finally {
+      setLoadingAccounts(false);
+    }
+  }, [adminToken, authHeaders]);
+
+  useEffect(() => {
+    if (showAccountsModal && isAdmin) {
+      fetchAccounts();
+    }
+  }, [showAccountsModal, isAdmin, fetchAccounts]);
+
+  const openCreateAccountModal = () => {
+    setEditingAccountId(null);
+    setFormAccUsername("");
+    setFormAccPassword("");
+    setFormAccName("");
+    setFormAccRole("uploader");
+    setFormAccCanUpload(true);
+    setFormAccAllowedAll(true);
+    setFormAccSelectedFolders([]);
+    setAccountFormError("");
+    setShowAccountFormModal(true);
+  };
+
+  const openEditAccountModal = (acc: DriveAccountItem) => {
+    setEditingAccountId(acc.id);
+    setFormAccUsername(acc.username);
+    setFormAccPassword("");
+    setFormAccName(acc.name || "");
+    setFormAccRole(acc.role === "admin" ? "admin" : "uploader");
+    setFormAccCanUpload(acc.canUpload !== false);
+    const isAll = !acc.allowedFolders || acc.allowedFolders.includes("*");
+    setFormAccAllowedAll(isAll);
+    setFormAccSelectedFolders(isAll ? [] : acc.allowedFolders || []);
+    setAccountFormError("");
+    setShowAccountFormModal(true);
+  };
+
+  const handleSaveAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAccountFormError("");
+    setIsSavingAccount(true);
+
+    try {
+      const allowedFolders = formAccAllowedAll ? ["*"] : formAccSelectedFolders.length > 0 ? formAccSelectedFolders : ["*"];
+
+      if (!editingAccountId) {
+        if (!formAccUsername.trim() || formAccUsername.trim().length < 3) {
+          throw new Error("Tên đăng nhập phải có ít nhất 3 ký tự!");
+        }
+        if (!formAccPassword.trim() || formAccPassword.trim().length < 4) {
+          throw new Error("Mật khẩu phải có ít nhất 4 ký tự!");
+        }
+
+        const res = await fetch("/api/drive/accounts", {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            username: formAccUsername.trim(),
+            password: formAccPassword.trim(),
+            name: formAccName.trim() || formAccUsername.trim(),
+            role: formAccRole,
+            canUpload: formAccCanUpload,
+            allowedFolders,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Không thể cấp tài khoản");
+        }
+
+        showToast(`✅ Đã cấp tài khoản "${formAccUsername.trim()}" thành công!`);
+      } else {
+        const payload: any = {
+          name: formAccName.trim() || formAccUsername.trim(),
+          role: formAccRole,
+          canUpload: formAccCanUpload,
+          allowedFolders,
+        };
+        if (formAccPassword.trim()) {
+          if (formAccPassword.trim().length < 4) {
+            throw new Error("Mật khẩu mới phải có ít nhất 4 ký tự!");
+          }
+          payload.password = formAccPassword.trim();
+        }
+
+        const res = await fetch(`/api/drive/accounts/${encodeURIComponent(editingAccountId)}`, {
+          method: "PUT",
+          headers: authHeaders(),
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Không thể cập nhật tài khoản");
+        }
+
+        showToast(`✅ Đã cập nhật tài khoản "${formAccUsername}" thành công!`);
+      }
+
+      setShowAccountFormModal(false);
+      fetchAccounts();
+    } catch (err: any) {
+      setAccountFormError(err.message || "Lỗi lưu tài khoản");
+    } finally {
+      setIsSavingAccount(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!accountToDelete) return;
+    setIsDeletingAccount(true);
+    try {
+      const res = await fetch(`/api/drive/accounts/${encodeURIComponent(accountToDelete.id)}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Không thể xóa tài khoản");
+      }
+      showToast(`🗑️ Đã xóa tài khoản "${accountToDelete.username}"!`);
+      setAccountToDelete(null);
+      fetchAccounts();
+    } catch (err: any) {
+      showToast(err.message || "Lỗi xóa tài khoản");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
   useEffect(() => {
     fetchFolders();
   }, [fetchFolders]);
@@ -1221,21 +1466,27 @@ export default function DriveApp() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+        body: JSON.stringify({ username: loginUsername.trim(), password: loginPassword.trim() }),
       });
       const data = await res.json();
-      if (!res.ok || !data.token) {
-        throw new Error(data.message || "Tên đăng nhập hoặc mật khẩu không đúng.");
+      const token = data?.data?.token || data?.token;
+      const user = data?.data?.user || data?.user || { username: loginUsername.trim(), role: "admin", canUpload: true };
+
+      if (!res.ok || !data.success || !token) {
+        throw new Error(data.message || "Tên đăng nhập hoặc mật khẩu không chính xác.");
       }
 
-      setAdminToken(data.token);
-      setAdminUser(data.user || { username: loginUsername });
-      localStorage.setItem("drive_admin_token", data.token);
-      localStorage.setItem("drive_admin_user", JSON.stringify(data.user || { username: loginUsername }));
+      setAdminToken(token);
+      setCurrentUser(user);
+      localStorage.setItem("drive_auth_token", token);
+      localStorage.setItem("drive_admin_token", token);
+      localStorage.setItem("cyber_auth_token", token);
+      localStorage.setItem("drive_current_user", JSON.stringify(user));
+      localStorage.setItem("drive_admin_user", JSON.stringify(user));
       setShowLoginModal(false);
       setLoginUsername("");
       setLoginPassword("");
-      showToast("Đăng nhập Admin thành công!");
+      showToast(data.message || "Đăng nhập thành công!");
       fetchFolders();
     } catch (err: any) {
       setLoginError(err.message || "Lỗi đăng nhập.");
@@ -1246,11 +1497,13 @@ export default function DriveApp() {
 
   const handleLogout = () => {
     setAdminToken(null);
-    setAdminUser(null);
+    setCurrentUser(null);
+    localStorage.removeItem("drive_auth_token");
     localStorage.removeItem("drive_admin_token");
-    localStorage.removeItem("drive_admin_user");
     localStorage.removeItem("cyber_auth_token");
-    showToast("Đã đăng xuất quyền Admin.");
+    localStorage.removeItem("drive_current_user");
+    localStorage.removeItem("drive_admin_user");
+    showToast("Đã đăng xuất tài khoản.");
     fetchFolders();
   };
 
@@ -1701,8 +1954,8 @@ export default function DriveApp() {
 
         {/* Right Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Mode Switcher: Kho Tệp vs Tải Lên Dual-Backup (Admin Only) */}
-          {isAdmin && (
+          {/* Mode Switcher: Kho Tệp vs Tải Lên (Admin & Authorized Users) */}
+          {canUpload && (
             <div className="flex items-center gap-1 bg-gray-900/90 p-1 rounded-xl border border-gray-800 shrink-0">
               <button
                 onClick={() => switchTab("files")}
@@ -1717,7 +1970,7 @@ export default function DriveApp() {
               </button>
               <button
                 onClick={() => {
-                  if (activeFolder) {
+                  if (activeFolder && canUploadToFolder(activeFolder)) {
                     quickFileInputRef.current?.click();
                   } else {
                     switchTab("upload");
@@ -1741,17 +1994,34 @@ export default function DriveApp() {
             {theme === "dark" ? <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />}
           </button>
 
-          {/* Admin Indicator / Login Button */}
-          {isAdmin ? (
-            <div className="flex items-center gap-2 pl-1 border-l border-gray-700/50">
-              <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Admin: {adminUser?.username || "Admin"}</span>
-              </span>
+          {/* User Auth Indicators & Actions */}
+          {adminToken ? (
+            <div className="flex items-center gap-1.5 sm:gap-2 pl-1 border-l border-gray-700/50">
+              {isAdmin ? (
+                <>
+                  <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span className="truncate max-w-[120px]">Admin: {currentUser?.name || currentUser?.username || "Admin"}</span>
+                  </span>
+                  <button
+                    onClick={() => setShowAccountsModal(true)}
+                    className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-purple-500/25 via-indigo-500/25 to-cyan-500/25 hover:from-purple-500/40 hover:to-cyan-500/40 border border-purple-500/40 text-purple-200 hover:text-white transition-all cursor-pointer shadow-sm hover:scale-[1.03]"
+                    title="Quản lý và cấp tài khoản tải lên"
+                  >
+                    <Users className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="hidden sm:inline">Quản lý tài khoản</span>
+                  </button>
+                </>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                  <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="truncate max-w-[140px]">{currentUser?.name || currentUser?.username} (Tải lên)</span>
+                </span>
+              )}
               <button
                 onClick={handleLogout}
                 className="p-2 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                title="Đăng xuất quyền Admin"
+                title="Đăng xuất tài khoản"
               >
                 <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
@@ -1759,10 +2029,11 @@ export default function DriveApp() {
           ) : (
             <button
               onClick={() => setShowLoginModal(true)}
-              className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 bg-gray-800/80 hover:bg-gray-700/80 border border-gray-700 text-gray-300 hover:text-white transition-all cursor-pointer"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 bg-gradient-to-r from-cyan-500/15 to-blue-500/15 hover:from-cyan-500/25 hover:to-blue-500/25 border border-cyan-500/30 text-cyan-300 hover:text-white transition-all cursor-pointer shadow-sm"
+              title="Đăng nhập tài khoản Admin hoặc tài khoản tải lên do Admin cấp"
             >
               <LogIn className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="hidden sm:inline">Quản trị viên</span>
+              <span>Đăng nhập</span>
             </button>
           )}
         </div>
@@ -1804,8 +2075,8 @@ export default function DriveApp() {
 
             {/* Folder List */}
             <div className="flex-1 overflow-y-auto p-3 space-y-1 min-h-0">
-              {/* Action Buttons: Upload & New Folder (Admin Only) */}
-              {isAdmin && (
+              {/* Action Buttons: Upload & New Folder */}
+              {isAdmin ? (
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <button
                     onClick={() => {
@@ -1835,11 +2106,44 @@ export default function DriveApp() {
                     <span>+ Thư Mục</span>
                   </button>
                 </div>
+              ) : canUpload ? (
+                <div className="mb-2">
+                  <button
+                    onClick={() => {
+                      if (activeFolder && canUploadToFolder(activeFolder)) {
+                        quickFileInputRef.current?.click();
+                        setMobileSidebarOpen(false);
+                      } else {
+                        switchTab("upload");
+                        setMobileSidebarOpen(false);
+                      }
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-pink-500/20 via-purple-500/20 to-cyan-500/20 hover:from-pink-500/30 hover:to-cyan-500/30 border border-pink-500/40 text-pink-300 transition-all cursor-pointer shadow-sm hover:scale-[1.01]"
+                    title="Tải tệp lên thư mục được chia sẻ"
+                  >
+                    <Upload className="w-4 h-4 text-pink-400 shrink-0" />
+                    <span>+ Tải Lên Thư Mục Chia Sẻ</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="mb-2">
+                  <button
+                    onClick={() => {
+                      setShowLoginModal(true);
+                      setMobileSidebarOpen(false);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold bg-gray-900 hover:bg-gray-800 border border-cyan-500/20 text-cyan-400 hover:text-cyan-300 transition-all cursor-pointer"
+                    title="Đăng nhập tài khoản do Admin cấp để tải tệp lên"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span>Đăng nhập để tải lên</span>
+                  </button>
+                </div>
               )}
 
               <button
                 onClick={() => {
-                  setActiveFolder(null);
+                  handleExitToAllFolders();
                   setMobileSidebarOpen(false);
                 }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all cursor-pointer ${
@@ -1999,7 +2303,7 @@ export default function DriveApp() {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs sm:text-sm min-w-0">
                 <button
-                  onClick={() => setActiveFolder(null)}
+                  onClick={handleExitToAllFolders}
                   className="text-gray-400 hover:text-cyan-400 transition-colors truncate cursor-pointer"
                 >
                   Kho lưu trữ
@@ -2102,8 +2406,8 @@ export default function DriveApp() {
                   {activeFolder.hasPassword && unlockedFolderIds.has(activeFolder.id) && (
                     <button
                       onClick={() => {
-                        lockFolder(activeFolder.id);
-                        setActiveFolder(null);
+                        lockFolder(activeFolder.id, true);
+                        handleExitToAllFolders();
                       }}
                       className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-amber-500/40 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-white transition-all cursor-pointer shadow-sm"
                       title="Khóa lại thư mục này"
@@ -2139,7 +2443,7 @@ export default function DriveApp() {
                     </button>
                   )}
 
-                  {isAdmin && (
+                  {canUploadToFolder(activeFolder) ? (
                     <button
                       onClick={() => quickFileInputRef.current?.click()}
                       className="px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-pink-500/25 to-cyan-500/25 hover:from-pink-500/40 hover:to-cyan-500/40 border border-pink-500/40 text-pink-300 hover:text-white transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
@@ -2148,7 +2452,16 @@ export default function DriveApp() {
                       <Upload className="w-3.5 h-3.5 text-pink-400" />
                       <span>+ Tải Lên Tệp</span>
                     </button>
-                  )}
+                  ) : !currentUser ? (
+                    <button
+                      onClick={() => setShowLoginModal(true)}
+                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-cyan-500/30 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/50 hover:text-white transition-all cursor-pointer shadow-sm"
+                      title="Đăng nhập tài khoản do Admin cấp để tải tệp lên thư mục này"
+                    >
+                      <LogIn className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Đăng nhập để tải lên</span>
+                    </button>
+                  ) : null}
                 </div>
 
                 {isSelectMode && filteredFiles.length > 0 && (
@@ -3481,18 +3794,23 @@ export default function DriveApp() {
         </div>
       )}
 
-      {/* UNLOCK FOLDER MODAL (PASSWORD PROMPT FOR ADMIN & GUESTS) */}
+      {/* UNLOCK FOLDER MODAL (MANDATORY PASSWORD VERIFICATION) */}
       {showUnlockModal && folderToUnlock && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
-          <div className="max-w-md w-full rounded-2xl bg-[#0b1120] border border-amber-500/50 p-6 space-y-5 shadow-2xl relative shadow-amber-500/10">
-            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+          <div className="max-w-md w-full rounded-2xl bg-[#0b1329] border-2 border-amber-500/50 p-6 space-y-5 shadow-2xl relative shadow-amber-500/20">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3.5">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
-                  <FolderLock className="w-6 h-6" />
+                <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.35)] animate-pulse">
+                  <FolderLock className="w-7 h-7" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-white">Thư Mục Bảo Mật</h3>
-                  <p className="text-[11px] text-amber-400 font-mono">Yêu cầu xác thực mật khẩu</p>
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-bold text-base sm:text-lg text-white">Thư Mục Bảo Mật</h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold">
+                      BẮT BUỘC MK
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400">Yêu cầu nhập mật khẩu để xem & tải tệp</p>
                 </div>
               </div>
               <button
@@ -3502,30 +3820,31 @@ export default function DriveApp() {
                   setUnlockPassword("");
                   setUnlockError("");
                 }}
-                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
+                title="Đóng"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-gray-900/80 border border-gray-800 space-y-1">
-              <div className="text-[11px] text-gray-400">Thư mục đang truy cập:</div>
-              <div className="font-bold text-white text-sm flex items-center gap-1.5">
-                <Folder className="w-4 h-4 text-cyan-400" />
-                <span>{folderToUnlock.name}</span>
+            <div className="p-3.5 rounded-xl bg-gray-900/90 border border-gray-800 space-y-1.5">
+              <div className="text-[11px] text-gray-400 font-mono">📁 Thư mục đang truy cập:</div>
+              <div className="font-bold text-white text-sm sm:text-base flex items-center gap-2 text-cyan-300">
+                <Folder className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span className="truncate">{folderToUnlock.name}</span>
               </div>
               {folderToUnlock.description && (
-                <div className="text-xs text-gray-400 mt-1">{folderToUnlock.description}</div>
+                <div className="text-xs text-gray-400 line-clamp-2">{folderToUnlock.description}</div>
               )}
             </div>
 
             <form onSubmit={handleUnlockFolder} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
-                  Nhập mật khẩu để mở khóa <span className="text-amber-400">*</span>
+                <label className="text-xs font-semibold text-gray-200 block mb-1.5">
+                  Nhập mật khẩu truy cập <span className="text-amber-400">*</span>
                 </label>
                 <div className="relative">
-                  <Key className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Key className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-400/80" />
                   <input
                     type={showUnlockPasswordText ? "text" : "password"}
                     autoFocus
@@ -3536,21 +3855,22 @@ export default function DriveApp() {
                       setUnlockError("");
                     }}
                     placeholder="Nhập mật khẩu thư mục..."
-                    className="w-full bg-gray-900 border border-gray-700 focus:border-amber-400 rounded-xl pl-10 pr-10 py-2.5 text-xs text-white focus:outline-none transition-colors"
+                    className="w-full bg-gray-950 border border-gray-700 focus:border-amber-400 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-all font-mono"
                   />
                   <button
                     type="button"
                     onClick={() => setShowUnlockPasswordText(!showUnlockPasswordText)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white cursor-pointer p-1"
+                    title={showUnlockPasswordText ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
                   >
                     {showUnlockPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 {unlockError && (
-                  <p className="text-xs text-red-400 font-medium mt-1.5 flex items-center gap-1">
-                    <AlertCircle className="w-3.5 h-3.5" />
+                  <div className="mt-2 p-2.5 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-400 font-medium flex items-center gap-2 animate-shake">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
                     <span>{unlockError}</span>
-                  </p>
+                  </div>
                 )}
               </div>
 
@@ -3570,7 +3890,7 @@ export default function DriveApp() {
                 <button
                   type="submit"
                   disabled={isUnlocking || !unlockPassword.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/25 transition-all cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-amber-500/25 transition-all cursor-pointer disabled:opacity-50 hover:scale-[1.02] active:scale-95"
                 >
                   {isUnlocking ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
                   <span>{isUnlocking ? "Đang xác thực..." : "Mở Khóa Thư Mục"}</span>
@@ -4390,14 +4710,19 @@ export default function DriveApp() {
         </>
       )}
 
-      {/* 6. ADMIN LOGIN MODAL */}
+      {/* 6. LOGIN MODAL (ADMIN & DRIVE UPLOAD ACCOUNTS) */}
       {showLoginModal && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
-          <div className="max-w-sm w-full rounded-2xl bg-[#0f172a] border border-cyan-500/40 p-6 space-y-5 shadow-2xl relative">
+          <div className="max-w-md w-full rounded-2xl bg-[#0f172a] border border-cyan-500/40 p-6 space-y-5 shadow-2xl relative">
             <div className="flex items-center justify-between border-b border-gray-800 pb-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-cyan-400" />
-                <h3 className="font-bold text-base text-white">Đăng nhập Quản trị viên</h3>
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Đăng nhập Drive Vault</h3>
+                  <p className="text-[11px] text-gray-400">Admin & Tài khoản tải lên do Admin cấp</p>
+                </div>
               </div>
               <button
                 onClick={() => setShowLoginModal(false)}
@@ -4416,38 +4741,464 @@ export default function DriveApp() {
               )}
 
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Tài khoản</label>
+                <label className="text-xs text-gray-300 font-medium block mb-1.5">Tên đăng nhập (Username)</label>
                 <input
                   type="text"
                   required
                   value={loginUsername}
                   onChange={(e) => setLoginUsername(e.target.value)}
-                  placeholder="admin..."
-                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                  placeholder="Tên tài khoản..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Mật khẩu</label>
+                <label className="text-xs text-gray-300 font-medium block mb-1.5">Mật khẩu (Password)</label>
                 <input
                   type="password"
                   required
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-cyan-400"
                 />
+              </div>
+
+              <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/20 text-[11px] text-cyan-300 leading-relaxed">
+                💡 <span className="font-semibold">Lưu ý:</span> Người dùng được Admin cấp tài khoản có thể tải tệp lên các thư mục chia sẻ theo phân quyền.
               </div>
 
               <button
                 type="submit"
                 disabled={loginLoading}
-                className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 shadow-md shadow-cyan-500/20"
               >
                 {loginLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-                <span>Xác thực Admin</span>
+                <span>Đăng nhập hệ thống</span>
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6.1. DRIVE ACCOUNTS MANAGEMENT MODAL (ADMIN ONLY) */}
+      {showAccountsModal && (
+        <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-3 sm:p-5 animate-fadeIn select-none">
+          <div className="max-w-4xl w-full max-h-[90vh] rounded-2xl bg-[#0b1329] border border-cyan-500/40 flex flex-col shadow-2xl relative overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-gray-800 flex items-center justify-between shrink-0 bg-gray-900/60">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500/20 to-cyan-500/20 text-cyan-400 border border-purple-500/40 shadow-sm">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base sm:text-lg text-white flex items-center gap-2">
+                    Quản Lý Tài Khoản Tải Lên Drive
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                      {accountsList.length} tài khoản
+                    </span>
+                  </h3>
+                  <p className="text-xs text-gray-400">Admin cấp quyền cho người dùng/thành viên để tải tệp lên thư mục chia sẻ</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAccountsModal(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Action Toolbar */}
+            <div className="p-3 sm:p-4 border-b border-gray-800/80 bg-gray-950/40 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={accountSearchQuery}
+                  onChange={(e) => setAccountSearchQuery(e.target.value)}
+                  placeholder="Tìm tài khoản theo tên hoặc username..."
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-gray-900 border border-gray-700 text-xs text-white focus:outline-none focus:border-cyan-400"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={fetchAccounts}
+                  className="p-2 rounded-xl bg-gray-900 hover:bg-gray-800 border border-gray-700 text-gray-300 hover:text-white transition-colors cursor-pointer"
+                  title="Tải lại danh sách"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loadingAccounts ? "animate-spin text-cyan-400" : ""}`} />
+                </button>
+                <button
+                  onClick={openCreateAccountModal}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-cyan-500/20 hover:scale-[1.02]"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>+ Cấp Tài Khoản Mới</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Accounts List Table / Cards */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-5 min-h-0 space-y-3">
+              {loadingAccounts && accountsList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-12 text-gray-400 gap-2">
+                  <RefreshCw className="w-8 h-8 animate-spin text-cyan-400" />
+                  <span className="text-xs">Đang tải danh sách tài khoản...</span>
+                </div>
+              ) : accountsList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-12 text-center text-gray-400 gap-3 border border-dashed border-gray-800 rounded-2xl bg-gray-950/20">
+                  <div className="p-4 rounded-full bg-cyan-500/10 text-cyan-400">
+                    <UserPlus className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-white text-sm">Chưa có tài khoản nào được cấp</p>
+                    <p className="text-xs text-gray-500 max-w-sm mt-1">
+                      Nhấn nút "+ Cấp Tài Khoản Mới" để tạo tài khoản cho phép người dùng tải tệp lên thư mục chia sẻ.
+                    </p>
+                  </div>
+                  <button
+                    onClick={openCreateAccountModal}
+                    className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs flex items-center gap-2 cursor-pointer transition-transform hover:scale-105"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>Cấp tài khoản ngay</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {accountsList
+                    .filter((acc) => {
+                      if (!accountSearchQuery.trim()) return true;
+                      const q = accountSearchQuery.toLowerCase();
+                      return (
+                        acc.username.toLowerCase().includes(q) ||
+                        (acc.name && acc.name.toLowerCase().includes(q))
+                      );
+                    })
+                    .map((acc) => {
+                      const isAllFolders = !acc.allowedFolders || acc.allowedFolders.includes("*");
+                      return (
+                        <div
+                          key={acc.id}
+                          className="p-4 rounded-xl bg-gray-900/80 border border-gray-800 hover:border-cyan-500/40 transition-all flex flex-col justify-between gap-3 group shadow-sm hover:shadow-cyan-500/5"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500/20 to-purple-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold shrink-0">
+                                {acc.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h4 className="font-bold text-sm text-white truncate">{acc.name || acc.username}</h4>
+                                  <span className="text-[11px] font-mono text-cyan-400 font-medium">@{acc.username}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span
+                                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                      acc.role === "admin"
+                                        ? "bg-purple-500/15 text-purple-300 border-purple-500/30"
+                                        : "bg-blue-500/15 text-blue-300 border-blue-500/30"
+                                    }`}
+                                  >
+                                    {acc.role === "admin" ? "Quản trị viên" : "Người tải lên"}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                      acc.canUpload !== false
+                                        ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                        : "bg-red-500/15 text-red-400 border-red-500/30"
+                                    }`}
+                                  >
+                                    {acc.canUpload !== false ? "✓ Quyền tải lên: BẬT" : "✕ Quyền tải lên: KHÓA"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Folder permissions info */}
+                          <div className="text-[11px] bg-black/40 p-2.5 rounded-lg border border-gray-800 text-gray-300 space-y-1">
+                            <div className="text-gray-400 font-medium">Phạm vi thư mục:</div>
+                            {isAllFolders ? (
+                              <div className="text-cyan-300 font-mono flex items-center gap-1">
+                                <Sparkles className="w-3 h-3 text-cyan-400" />
+                                <span>Tất cả thư mục được chia sẻ (*)</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {acc.allowedFolders.map((fId) => {
+                                  const fMatch = folders.find((f) => f.id === fId || f.folder === fId);
+                                  return (
+                                    <span
+                                      key={fId}
+                                      className="px-2 py-0.5 rounded bg-gray-800 text-gray-200 text-[10px] font-mono border border-gray-700"
+                                    >
+                                      📁 {fMatch?.name || fId}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center justify-between pt-1 border-t border-gray-800/80 text-xs">
+                            <span className="text-[10px] text-gray-500">
+                              Tạo: {new Date(acc.createdAt).toLocaleDateString("vi-VN")}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  const loginInfo = `Tài khoản Drive:\nUsername: ${acc.username}\nTrang web: ${window.location.origin}/drive`;
+                                  navigator.clipboard.writeText(loginInfo);
+                                  showToast(`Đã sao chép thông tin tài khoản @${acc.username}!`);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Sao chép thông tin tài khoản"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>Chép</span>
+                              </button>
+                              <button
+                                onClick={() => openEditAccountModal(acc)}
+                                className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Sửa thông tin hoặc đổi mật khẩu"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>Sửa</span>
+                              </button>
+                              <button
+                                onClick={() => setAccountToDelete(acc)}
+                                className="px-2.5 py-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Xóa tài khoản"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Xóa</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 sm:p-4 border-t border-gray-800 bg-gray-900/80 flex items-center justify-between shrink-0">
+              <span className="text-xs text-gray-400">
+                Tài khoản được lưu trữ an toàn trong Neon PostgreSQL DB
+              </span>
+              <button
+                onClick={() => setShowAccountsModal(false)}
+                className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6.2. CREATE / EDIT ACCOUNT MODAL */}
+      {showAccountFormModal && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-3 sm:p-4 animate-fadeIn select-none overflow-y-auto">
+          <div className="max-w-md w-full rounded-2xl bg-[#0f172a] border border-cyan-500/40 p-5 sm:p-6 space-y-4 shadow-2xl relative my-8">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-cyan-400" />
+                <h3 className="font-bold text-base text-white">
+                  {editingAccountId ? "Chỉnh sửa tài khoản" : "Cấp tài khoản tải lên mới"}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowAccountFormModal(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAccount} className="space-y-3.5">
+              {accountFormError && (
+                <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-400 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{accountFormError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs text-gray-300 font-medium block mb-1">
+                  Tên đăng nhập (Username) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  disabled={!!editingAccountId}
+                  value={formAccUsername}
+                  onChange={(e) => setFormAccUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                  placeholder="vidu: student1, guest_uploader..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 disabled:opacity-60 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                />
+                <span className="text-[10px] text-gray-500 mt-0.5 block">Chữ thường, số và dấu gạch dưới</span>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-300 font-medium block mb-1">
+                  {editingAccountId ? "Mật khẩu mới (Bỏ trống nếu giữ nguyên)" : "Mật khẩu *"}
+                </label>
+                <input
+                  type="password"
+                  required={!editingAccountId}
+                  value={formAccPassword}
+                  onChange={(e) => setFormAccPassword(e.target.value)}
+                  placeholder="Tối thiểu 4 ký tự..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-300 font-medium block mb-1">
+                  Họ và tên / Đơn vị hiển thị
+                </label>
+                <input
+                  type="text"
+                  value={formAccName}
+                  onChange={(e) => setFormAccName(e.target.value)}
+                  placeholder="Nguyễn Văn A / Lớp K48..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-300 font-medium block mb-1">Vai trò</label>
+                  <select
+                    value={formAccRole}
+                    onChange={(e: any) => setFormAccRole(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
+                  >
+                    <option value="uploader">Người tải lên (Uploader)</option>
+                    <option value="admin">Quản trị viên (Admin)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-300 font-medium block mb-1">Quyền tải lên</label>
+                  <select
+                    value={formAccCanUpload ? "true" : "false"}
+                    onChange={(e) => setFormAccCanUpload(e.target.value === "true")}
+                    className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
+                  >
+                    <option value="true">Cho phép tải lên (BẬT)</option>
+                    <option value="false">Khóa tải lên (TẮT)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-300 font-medium block mb-1.5">
+                  Phạm vi thư mục được phép tải lên
+                </label>
+                <div className="space-y-2 bg-gray-950 p-3 rounded-xl border border-gray-800 text-xs">
+                  <label className="flex items-center gap-2 text-gray-200 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={formAccAllowedAll}
+                      onChange={() => setFormAccAllowedAll(true)}
+                      className="text-cyan-500 focus:ring-cyan-400"
+                    />
+                    <span className="font-semibold text-cyan-300">Tất cả thư mục được chia sẻ (*)</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-gray-200 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={!formAccAllowedAll}
+                      onChange={() => setFormAccAllowedAll(false)}
+                      className="text-cyan-500 focus:ring-cyan-400"
+                    />
+                    <span>Chỉ định các thư mục cụ thể</span>
+                  </label>
+
+                  {!formAccAllowedAll && (
+                    <div className="pt-2 border-t border-gray-800 space-y-1.5 max-h-36 overflow-y-auto pl-2">
+                      {folders.map((f) => {
+                        const checked = formAccSelectedFolders.includes(f.id);
+                        return (
+                          <label key={f.id} className="flex items-center gap-2 text-[11px] text-gray-300 cursor-pointer hover:text-white">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setFormAccSelectedFolders((prev) =>
+                                  checked ? prev.filter((id) => id !== f.id) : [...prev, f.id]
+                                );
+                              }}
+                              className="rounded text-cyan-500"
+                            />
+                            <span>📁 {f.name} {f.isShared ? "(Đang chia sẻ)" : ""}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAccountFormModal(false)}
+                  className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingAccount}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-black font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingAccount && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{editingAccountId ? "Lưu thay đổi" : "Tạo tài khoản"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6.3. DELETE ACCOUNT CONFIRMATION MODAL */}
+      {accountToDelete && (
+        <div className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
+          <div className="max-w-sm w-full rounded-2xl bg-[#0f172a] border border-red-500/40 p-6 space-y-4 shadow-2xl relative text-center">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="font-bold text-base text-white">Xác nhận xóa tài khoản</h3>
+              <p className="text-xs text-gray-300">
+                Bạn có chắc chắn muốn xóa tài khoản <span className="font-bold text-cyan-400">@{accountToDelete.username}</span>?
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-center gap-3">
+              <button
+                onClick={() => setAccountToDelete(null)}
+                disabled={isDeletingAccount}
+                className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={isDeletingAccount}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                {isDeletingAccount && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>Xóa vĩnh viễn</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

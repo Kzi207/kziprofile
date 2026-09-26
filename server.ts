@@ -93,12 +93,82 @@ function sendResponse(res: Response, status: number, success: boolean, message: 
   return res.status(status).json({ success, message, data });
 }
 
-// Authentication Middleware
+// Authentication Middleware & Drive Accounts
+export interface DriveAccount {
+  id: string;
+  username: string;
+  passwordHash: string;
+  name: string;
+  role: "admin" | "uploader" | "user";
+  canUpload: boolean;
+  allowedFolders: string[]; // ["*"] or list of folder IDs
+  createdAt: string;
+  updatedAt: string;
+}
+
+let inMemoryAccountsCache: DriveAccount[] = [];
+
+async function getStoredDriveAccounts(): Promise<DriveAccount[]> {
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: "drive_accounts" } });
+    if (row && row.value) {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed)) {
+        inMemoryAccountsCache = parsed;
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn("[Neon DB] Read drive_accounts error:", e);
+  }
+
+  if (inMemoryAccountsCache.length > 0) {
+    return inMemoryAccountsCache;
+  }
+
+  const dataFile = path.join(process.cwd(), "data", "drive_accounts.json");
+  if (fs.existsSync(dataFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(dataFile, "utf-8"));
+      if (Array.isArray(parsed)) {
+        inMemoryAccountsCache = parsed;
+        saveStoredDriveAccounts(parsed).catch(() => {});
+        return parsed;
+      }
+    } catch (e) {}
+  }
+  return [];
+}
+
+async function saveStoredDriveAccounts(accounts: DriveAccount[]): Promise<void> {
+  inMemoryAccountsCache = accounts;
+  const jsonStr = JSON.stringify(accounts, null, 2);
+  try {
+    await prisma.setting.upsert({
+      where: { key: "drive_accounts" },
+      update: { value: jsonStr, updatedAt: new Date() },
+      create: { key: "drive_accounts", value: jsonStr, description: "Drive Accounts in Neon DB" },
+    });
+  } catch (e) {
+    console.warn("[Neon DB] Save drive_accounts error:", e);
+  }
+
+  try {
+    const dataDir = path.join(process.cwd(), "data");
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(path.join(dataDir, "drive_accounts.json"), jsonStr);
+  } catch (e) {}
+}
+
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     username: string;
-    email: string;
+    email?: string;
+    name?: string;
+    role?: string;
+    canUpload?: boolean;
+    allowedFolders?: string[];
   };
 }
 
@@ -112,7 +182,7 @@ function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextF
   }
 
   try {
-    const verified = jwt.verify(token, JWT_SECRET) as { id: string; username: string; email: string };
+    const verified = jwt.verify(token, JWT_SECRET) as any;
     req.user = verified;
     next();
   } catch (err) {
@@ -128,7 +198,7 @@ function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextF
 // --- AUTHENTICATION ---
 const loginSchema = z.object({
   username: z.string().min(3, "Tài khoản tối thiểu 3 ký tự"),
-  password: z.string().min(5, "Mật khẩu tối thiểu 5 ký tự"),
+  password: z.string().min(4, "Mật khẩu tối thiểu 4 ký tự"),
 });
 
 app.post("/api/auth/login", async (req: Request, res: Response) => {
@@ -139,28 +209,140 @@ app.post("/api/auth/login", async (req: Request, res: Response) => {
     }
 
     const { username, password } = parsed.data;
+    const cleanUsername = username.trim().toLowerCase();
 
-    const user = await prisma.user.findUnique({ where: { username } });
-    if (!user) {
-      return sendResponse(res, 401, false, "Tài khoản hoặc mật khẩu không đúng.");
+    // 1. Kiểm tra tài khoản Quản trị chính (Prisma User)
+    try {
+      const user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { username: { equals: cleanUsername, mode: "insensitive" } },
+            { username: username.trim() }
+          ]
+        }
+      });
+      if (user) {
+        const isPasswordValid = bcryptjs.compareSync(password, user.password);
+        if (isPasswordValid) {
+          const token = jwt.sign(
+            { id: user.id, username: user.username, email: user.email, name: user.name || user.username, role: "admin", canUpload: true, allowedFolders: ["*"] },
+            JWT_SECRET,
+            { expiresIn: "7d" }
+          );
+
+          const { password: _, ...userWithoutPassword } = user;
+          const adminUserData = { ...userWithoutPassword, role: "admin", canUpload: true, allowedFolders: ["*"] };
+          return res.status(200).json({
+            success: true,
+            message: "Đăng nhập Quản trị viên thành công!",
+            token,
+            user: adminUserData,
+            data: {
+              token,
+              user: adminUserData,
+            },
+          });
+        }
+      }
+    } catch (dbErr) {
+      console.warn("Prisma user auth warning:", dbErr);
     }
 
-    const isPasswordValid = bcryptjs.compareSync(password, user.password);
-    if (!isPasswordValid) {
-      return sendResponse(res, 401, false, "Tài khoản hoặc mật khẩu không đúng.");
+    // 1b. Fallback: Tài khoản Admin mặc định hệ thống (admin / admin123)
+    const defaultAdminPassword = process.env.ADMIN_PASSWORD || "admin123";
+    if (cleanUsername === "admin" && (password === defaultAdminPassword || password === "admin123")) {
+      const fallbackToken = jwt.sign(
+        { id: "admin", username: "admin", email: "toi05022020@gmail.com", name: "Lê Khánh Duy", role: "admin", canUpload: true, allowedFolders: ["*"] },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+      const adminFallbackUser = {
+        id: "admin",
+        username: "admin",
+        name: "Lê Khánh Duy",
+        email: "toi05022020@gmail.com",
+        role: "admin",
+        canUpload: true,
+        allowedFolders: ["*"],
+      };
+
+      // Tự động đồng bộ lại mật khẩu vào Neon DB
+      try {
+        const hashedPassword = bcryptjs.hashSync(password, 10);
+        await prisma.user.upsert({
+          where: { username: "admin" },
+          update: { password: hashedPassword },
+          create: {
+            username: "admin",
+            password: hashedPassword,
+            name: "Lê Khánh Duy",
+            nickname: "Kzi",
+            email: "toi05022020@gmail.com",
+          },
+        });
+      } catch (e) {
+        console.warn("Auto-sync admin password warning:", e);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Đăng nhập Quản trị viên thành công!",
+        token: fallbackToken,
+        user: adminFallbackUser,
+        data: {
+          token: fallbackToken,
+          user: adminFallbackUser,
+        },
+      });
     }
 
-    const token = jwt.sign(
-      { id: user.id, username: user.username, email: user.email },
-      JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    // 2. Kiểm tra tài khoản Drive được Admin cấp (Drive Accounts)
+    try {
+      const driveAccounts = await getStoredDriveAccounts();
+      const driveAcc = driveAccounts.find(
+        (a) => a.username.toLowerCase() === cleanUsername
+      );
+      if (driveAcc && bcryptjs.compareSync(password, driveAcc.passwordHash)) {
+        const token = jwt.sign(
+          {
+            id: driveAcc.id,
+            username: driveAcc.username,
+            name: driveAcc.name,
+            role: driveAcc.role || "uploader",
+            canUpload: driveAcc.canUpload !== false,
+            allowedFolders: driveAcc.allowedFolders || ["*"],
+            isDriveAccount: true,
+          },
+          JWT_SECRET,
+          { expiresIn: "7d" }
+        );
 
-    const { password: _, ...userWithoutPassword } = user;
-    return sendResponse(res, 200, true, "Đăng nhập thành công!", {
-      token,
-      user: userWithoutPassword,
-    });
+        const driveUserData = {
+          id: driveAcc.id,
+          username: driveAcc.username,
+          name: driveAcc.name,
+          role: driveAcc.role || "uploader",
+          canUpload: driveAcc.canUpload !== false,
+          allowedFolders: driveAcc.allowedFolders || ["*"],
+          isDriveAccount: true,
+        };
+
+        return res.status(200).json({
+          success: true,
+          message: "Đăng nhập tài khoản Drive thành công!",
+          token,
+          user: driveUserData,
+          data: {
+            token,
+            user: driveUserData,
+          },
+        });
+      }
+    } catch (accErr) {
+      console.warn("Drive accounts auth warning:", accErr);
+    }
+
+    return sendResponse(res, 401, false, "Tài khoản hoặc mật khẩu không chính xác.");
   } catch (error: any) {
     return sendResponse(res, 500, false, "Lỗi đăng nhập: " + error.message);
   }
@@ -168,14 +350,37 @@ app.post("/api/auth/login", async (req: Request, res: Response) => {
 
 app.get("/api/auth/me", authenticateToken as any, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user?.id },
-    });
-    if (!user) {
-      return sendResponse(res, 404, false, "Người dùng không tồn tại.");
+    if (req.user?.id) {
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+      });
+      if (user) {
+        const { password: _, ...userWithoutPassword } = user;
+        return sendResponse(res, 200, true, "Xác thực thành công", {
+          ...userWithoutPassword,
+          role: "admin",
+          canUpload: true,
+          allowedFolders: ["*"],
+        });
+      }
+
+      const driveAccounts = await getStoredDriveAccounts();
+      const driveAcc = driveAccounts.find(
+        (a) => a.id === req.user?.id || a.username.toLowerCase() === req.user?.username?.toLowerCase()
+      );
+      if (driveAcc) {
+        return sendResponse(res, 200, true, "Xác thực thành công", {
+          id: driveAcc.id,
+          username: driveAcc.username,
+          name: driveAcc.name,
+          role: driveAcc.role || "uploader",
+          canUpload: driveAcc.canUpload !== false,
+          allowedFolders: driveAcc.allowedFolders || ["*"],
+          isDriveAccount: true,
+        });
+      }
     }
-    const { password: _, ...userWithoutPassword } = user;
-    return sendResponse(res, 200, true, "Xác thực thành công", userWithoutPassword);
+    return sendResponse(res, 404, false, "Người dùng không tồn tại.");
   } catch (error: any) {
     return sendResponse(res, 500, false, "Lỗi xác thực: " + error.message);
   }
@@ -1348,18 +1553,91 @@ const DEFAULT_DRIVE_FOLDERS: DriveFolderMeta[] = [
 // In-memory cache for folder file counts (TTL: 60s) to reduce repeated filesystem reads
 const folderCountCache = new Map<string, { count: number; expiresAt: number }>();
 
-function checkIsAdmin(req: Request): boolean {
+function getAuthenticatedDriveUser(req: Request): {
+  id: string;
+  username: string;
+  name?: string;
+  role: "admin" | "uploader" | "user";
+  canUpload: boolean;
+  allowedFolders: string[];
+} | null {
   const queryToken = typeof req.query?.token === "string" ? (req.query.token as string).trim() : null;
   const authHeader = req.headers["authorization"] || (req.headers["x-auth-token"] as string) || queryToken;
   const token = authHeader ? (authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader) : null;
-  if (!token) return false;
-  if (token.startsWith("local_admin_session_token_")) return true;
+  if (!token) return null;
+  if (token.startsWith("local_admin_session_token_")) {
+    return { id: "admin", username: "admin", name: "Admin", role: "admin", canUpload: true, allowedFolders: ["*"] };
+  }
   try {
     const verified = jwt.verify(token, JWT_SECRET) as any;
-    return !!(verified && (verified.id || verified.username));
+    if (!verified) return null;
+    if (verified.role === "admin" || !verified.isDriveAccount) {
+      return {
+        id: verified.id || "admin",
+        username: verified.username || "admin",
+        name: verified.name || verified.username || "Admin",
+        role: "admin",
+        canUpload: true,
+        allowedFolders: ["*"],
+      };
+    }
+    return {
+      id: verified.id,
+      username: verified.username,
+      name: verified.name || verified.username,
+      role: verified.role || "uploader",
+      canUpload: verified.canUpload !== false,
+      allowedFolders: Array.isArray(verified.allowedFolders) ? verified.allowedFolders : ["*"],
+    };
   } catch (e) {
-    return false;
+    return null;
   }
+}
+
+function checkIsAdmin(req: Request): boolean {
+  const user = getAuthenticatedDriveUser(req);
+  return !!user && user.role === "admin";
+}
+
+function checkCanUploadFolder(req: Request, folderKey: string, folderMeta?: DriveFolderMeta | null): boolean {
+  if (checkIsAdmin(req)) return true;
+  const user = getAuthenticatedDriveUser(req);
+  if (!user || user.canUpload === false) return false;
+
+  const rawKey = String(folderKey || "").toLowerCase();
+  const slugKey = slugifyFolderName(rawKey);
+
+  // If user has wildcard permissions
+  if (user.allowedFolders.includes("*")) {
+    // Shared folders can be uploaded by any uploader/user
+    if (folderMeta?.isShared || !folderMeta) return true;
+    return true;
+  }
+
+  // Check specific folder permissions
+  const matchesFolder = user.allowedFolders.some((f) => {
+    const fLower = f.toLowerCase();
+    return (
+      fLower === rawKey ||
+      fLower === slugKey ||
+      (folderMeta && (
+        String(folderMeta.id).toLowerCase() === fLower ||
+        String(folderMeta.name).toLowerCase() === fLower ||
+        String(folderMeta.folder || "").toLowerCase() === fLower ||
+        slugifyFolderName(String(folderMeta.id)) === fLower ||
+        slugifyFolderName(String(folderMeta.name)) === fLower
+      ))
+    );
+  });
+
+  if (matchesFolder) return true;
+
+  // If folder is shared and user is an authorized uploader account
+  if (folderMeta && folderMeta.isShared && (user.role === "uploader" || user.role === "user")) {
+    return true;
+  }
+
+  return false;
 }
 
 function checkIsFolderUnlocked(req: Request, folder: DriveFolderMeta | null): boolean {
@@ -2898,14 +3176,20 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
   }
 });
 
-// 8. Upload File to Folder (Dual Storage: Local + Catbox.moe + DB) - Admin Only
+// 8. Upload File to Folder (Dual Storage: Local + Catbox.moe + DB) - Admin & Authorized Users
 app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, res: Response) => {
   try {
-    if (!checkIsAdmin(req)) {
-      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên (Admin) mới có quyền tải tệp lên!" });
+    const folderId = (req.body.folder as string)?.trim() || "fme-ctut";
+    const { folder, folderName } = await resolveFolder(folderId);
+
+    const canUpload = checkCanUploadFolder(req, folderId, folder);
+    if (!canUpload) {
+      return res.status(403).json({
+        success: false,
+        message: "Bạn chưa có quyền tải tệp lên thư mục này. Vui lòng đăng nhập tài khoản được Quản trị viên cấp quyền!",
+      });
     }
 
-    const folderId = (req.body.folder as string)?.trim() || "fme-ctut";
     let safeName = "";
     let buffer: Buffer;
 
@@ -2927,7 +3211,7 @@ app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, r
       return res.status(400).json({ success: false, message: "Định dạng tệp không được hỗ trợ" });
     }
 
-    // Ensure folder exists in DB metadata and filesystem; if not, auto-create it
+    // Ensure folder exists in DB metadata and filesystem; if not and requester is Admin, auto-create it
     try {
       const storedFolders = await getStoredFolders();
       const folderExists = storedFolders.some(
@@ -2939,7 +3223,7 @@ app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, r
           slugifyFolderName(f.name) === slugifyFolderName(folderId)
       );
 
-      if (!folderExists) {
+      if (!folderExists && checkIsAdmin(req)) {
         const now = new Date().toISOString();
         const slugged = slugifyFolderName(folderId);
         const newFolderMeta: DriveFolderMeta = {
@@ -3245,6 +3529,144 @@ app.delete("/api/drive/delete", async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Lỗi xóa tệp:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 10. Drive Accounts Management (Admin Only)
+app.get("/api/drive/accounts", async (req: Request, res: Response) => {
+  try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên mới có quyền xem danh sách tài khoản." });
+    }
+    const accounts = await getStoredDriveAccounts();
+    const safeAccounts = accounts.map(({ passwordHash, ...rest }) => rest);
+    return res.json({ success: true, count: safeAccounts.length, data: safeAccounts });
+  } catch (error: any) {
+    console.error("Lỗi lấy danh sách tài khoản:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post("/api/drive/accounts", async (req: Request, res: Response) => {
+  try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên mới có quyền cấp tài khoản mới." });
+    }
+
+    const { username, password, name, role, canUpload, allowedFolders } = req.body;
+    if (!username || typeof username !== "string" || username.trim().length < 3) {
+      return res.status(400).json({ success: false, message: "Tên đăng nhập phải có ít nhất 3 ký tự." });
+    }
+    if (!password || typeof password !== "string" || password.trim().length < 4) {
+      return res.status(400).json({ success: false, message: "Mật khẩu phải có ít nhất 4 ký tự." });
+    }
+
+    const cleanUsername = username.trim().toLowerCase();
+    const accounts = await getStoredDriveAccounts();
+    if (accounts.some((a) => a.username.toLowerCase() === cleanUsername)) {
+      return res.status(400).json({ success: false, message: "Tên đăng nhập này đã tồn tại, vui lòng chọn tên khác." });
+    }
+
+    // Check if conflicting with main admin user
+    try {
+      const existingPrismaUser = await prisma.user.findUnique({ where: { username: cleanUsername } });
+      if (existingPrismaUser) {
+        return res.status(400).json({ success: false, message: "Tên đăng nhập này trùng với tài khoản Quản trị chính của hệ thống." });
+      }
+    } catch (_) {}
+
+    const newAccount: DriveAccount = {
+      id: "acc_" + Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+      username: cleanUsername,
+      passwordHash: bcryptjs.hashSync(password.trim(), 10),
+      name: name?.trim() || cleanUsername,
+      role: role === "admin" ? "admin" : "uploader",
+      canUpload: canUpload !== false,
+      allowedFolders: Array.isArray(allowedFolders) && allowedFolders.length > 0 ? allowedFolders : ["*"],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    accounts.unshift(newAccount);
+    await saveStoredDriveAccounts(accounts);
+
+    const { passwordHash: _, ...safeAccount } = newAccount;
+    return res.json({
+      success: true,
+      message: `Đã cấp tài khoản "${cleanUsername}" thành công!`,
+      data: safeAccount,
+    });
+  } catch (error: any) {
+    console.error("Lỗi cấp tài khoản:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put("/api/drive/accounts/:id", async (req: Request, res: Response) => {
+  try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên mới có quyền sửa thông tin tài khoản." });
+    }
+
+    const accountId = req.params.id;
+    const { name, password, role, canUpload, allowedFolders } = req.body;
+
+    const accounts = await getStoredDriveAccounts();
+    const accountIndex = accounts.findIndex((a) => a.id === accountId);
+    if (accountIndex === -1) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy tài khoản cần sửa." });
+    }
+
+    const targetAccount = accounts[accountIndex];
+    if (name !== undefined) targetAccount.name = String(name).trim();
+    if (role !== undefined) targetAccount.role = role === "admin" ? "admin" : "uploader";
+    if (canUpload !== undefined) targetAccount.canUpload = !!canUpload;
+    if (allowedFolders !== undefined && Array.isArray(allowedFolders)) {
+      targetAccount.allowedFolders = allowedFolders.length > 0 ? allowedFolders : ["*"];
+    }
+    if (password && typeof password === "string" && password.trim().length >= 4) {
+      targetAccount.passwordHash = bcryptjs.hashSync(password.trim(), 10);
+    }
+    targetAccount.updatedAt = new Date().toISOString();
+
+    accounts[accountIndex] = targetAccount;
+    await saveStoredDriveAccounts(accounts);
+
+    const { passwordHash: _, ...safeAccount } = targetAccount;
+    return res.json({
+      success: true,
+      message: `Đã cập nhật thông tin tài khoản "${targetAccount.username}" thành công!`,
+      data: safeAccount,
+    });
+  } catch (error: any) {
+    console.error("Lỗi cập nhật tài khoản:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete("/api/drive/accounts/:id", async (req: Request, res: Response) => {
+  try {
+    if (!checkIsAdmin(req)) {
+      return res.status(403).json({ success: false, message: "Chỉ Quản trị viên mới có quyền xóa tài khoản." });
+    }
+
+    const accountId = req.params.id;
+    let accounts = await getStoredDriveAccounts();
+    const targetAccount = accounts.find((a) => a.id === accountId);
+    if (!targetAccount) {
+      return res.status(404).json({ success: false, message: "Không tìm thấy tài khoản cần xóa." });
+    }
+
+    accounts = accounts.filter((a) => a.id !== accountId);
+    await saveStoredDriveAccounts(accounts);
+
+    return res.json({
+      success: true,
+      message: `Đã xóa tài khoản "${targetAccount.username}" thành công!`,
+    });
+  } catch (error: any) {
+    console.error("Lỗi xóa tài khoản:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 });

@@ -1,0 +1,15 @@
+[
+  {
+    "id": "acc_muig7c9y8gv4",
+    "username": "kts",
+    "passwordHash": "$2b$10$gZsixegAnLhYWQk9Pzrs9.WpxDDWcq5orJlntTTdpVm07goRyMJkW",
+    "name": "kts",
+    "role": "uploader",
+    "canUpload": true,
+    "allowedFolders": [
+      "do-an-ky-thuat-so"
+    ],
+    "createdAt": "2026-09-26T13:51:27.827Z",
+    "updatedAt": "2026-09-26T13:51:27.828Z"
+  }
+]
