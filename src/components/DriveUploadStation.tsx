@@ -183,7 +183,47 @@ export default function DriveUploadStation({
     });
   };
 
-  // Upload single file via high-speed FormData
+  // Direct upload to Catbox.moe from browser (bypasses Vercel 4.5MB Serverless limit)
+  const uploadDirectToCatbox = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append("reqtype", "fileupload");
+    formData.append("userhash", "4862d65c4fbf6e0f5433eb011");
+
+    let uploadFilename = file.name;
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
+      uploadFilename = uploadFilename.replace(/\.docx?$/i, ".zip");
+    }
+    formData.append("fileToUpload", file, uploadFilename);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 mins for large files
+
+    try {
+      const response = await fetch("https://catbox.moe/user/api.php", {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        throw new Error(`Catbox error (${response.status}): ${errText || "Không thể tải lên"}`);
+      }
+
+      const url = (await response.text()).trim();
+      if (!url.startsWith("http")) {
+        throw new Error(`Catbox phản hồi: ${url}`);
+      }
+      return url;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
+  };
+
+  // Upload single file via high-speed FormData with Direct Catbox upload support
   const uploadSingleFile = async (staged: StagedUploadFile, targetFolder: string) => {
     if (!adminToken) {
       showToast("❌ Vui lòng đăng nhập tài khoản có quyền để tải lên tệp!");
@@ -193,7 +233,7 @@ export default function DriveUploadStation({
     setStagedFiles((prev) =>
       prev.map((item) =>
         item.id === staged.id
-          ? { ...item, status: "uploading", progressText: "Đang tải nhanh lên Catbox.moe..." }
+          ? { ...item, status: "uploading", progressText: "Đang tải siêu tốc lên Catbox.moe..." }
           : item
       )
     );
@@ -203,18 +243,52 @@ export default function DriveUploadStation({
         throw new Error(`Dung lượng tệp (${(staged.file.size / (1024 * 1024)).toFixed(1)} MB) vượt quá giới hạn 200MB của Catbox.moe!`);
       }
 
-      const formData = new FormData();
-      formData.append("file", staged.file);
-      formData.append("folder", targetFolder);
+      let catboxUrl = "";
+      // Step 1: Direct upload from client to Catbox.moe (bypasses Vercel 4.5MB limit and maximizes speed!)
+      try {
+        catboxUrl = await uploadDirectToCatbox(staged.file);
+      } catch (directErr: any) {
+        console.warn("Direct Catbox upload failed/blocked, checking fallback:", directErr);
+        // If direct upload failed and file is large (> 4.5MB) on Vercel
+        if (staged.file.size > 4.5 * 1024 * 1024 && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+          throw new Error(`Tải trực tiếp lên Catbox thất bại: ${directErr.message || "Lỗi mạng hoặc CORS"}.`);
+        }
+      }
+
+      setStagedFiles((prev) =>
+        prev.map((item) =>
+          item.id === staged.id
+            ? { ...item, progressText: "Đang lưu thông tin vào CSDL Neon..." }
+            : item
+        )
+      );
 
       const headers: Record<string, string> = {};
       if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
 
-      const res = await fetch("/api/drive/upload", {
-        method: "POST",
-        headers,
-        body: formData,
-      });
+      let res: Response;
+      if (catboxUrl) {
+        headers["Content-Type"] = "application/json";
+        res = await fetch("/api/drive/upload", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            folder: targetFolder,
+            filename: staged.file.name,
+            catboxUrl: catboxUrl,
+            size: staged.file.size,
+          }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("file", staged.file);
+        formData.append("folder", targetFolder);
+        res = await fetch("/api/drive/upload", {
+          method: "POST",
+          headers,
+          body: formData,
+        });
+      }
 
       const data = await safeParseJson(res, "Tải lên thất bại");
 

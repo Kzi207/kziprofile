@@ -449,6 +449,12 @@ export default function DriveApp() {
   const [renameRemovePassword, setRenameRemovePassword] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
 
+  // File Rename Modal states
+  const [showRenameFileModal, setShowRenameFileModal] = useState(false);
+  const [fileToRename, setFileToRename] = useState<DriveFile | null>(null);
+  const [renameFileNameInput, setRenameFileNameInput] = useState("");
+  const [isRenamingFile, setIsRenamingFile] = useState(false);
+
   // Folder Password Unlock Modal & Access Control states
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [folderToUnlock, setFolderToUnlock] = useState<DriveFolder | null>(null);
@@ -491,11 +497,25 @@ export default function DriveApp() {
     isMobileSheet?: boolean;
   } | null>(null);
 
-  // Close context menu on global click, scroll or Escape key
+  // Folder Context Menu & Mobile Action Sheet states (PC right-click & Mobile 3-dots)
+  const [folderContextMenu, setFolderContextMenu] = useState<{
+    folder: DriveFolder;
+    x: number;
+    y: number;
+    isMobileSheet?: boolean;
+  } | null>(null);
+
+  // Close context menus on global click, scroll or Escape key
   useEffect(() => {
-    const handleClose = () => setContextMenu(null);
+    const handleClose = () => {
+      setContextMenu(null);
+      setFolderContextMenu(null);
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setContextMenu(null);
+      if (e.key === "Escape") {
+        setContextMenu(null);
+        setFolderContextMenu(null);
+      }
     };
     window.addEventListener("click", handleClose);
     window.addEventListener("scroll", handleClose, true);
@@ -509,6 +529,7 @@ export default function DriveApp() {
 
   // Quick Direct Upload to Current Folder states
   const quickFileInputRef = useRef<HTMLInputElement>(null);
+  const [folderUploadTarget, setFolderUploadTarget] = useState<DriveFolder | null>(null);
   const [quickUploadOpen, setQuickUploadOpen] = useState(false);
   const [quickUploadMinimized, setQuickUploadMinimized] = useState(false);
   const [quickUploadTargetFolder, setQuickUploadTargetFolder] = useState<DriveFolder | null>(null);
@@ -1171,8 +1192,8 @@ export default function DriveApp() {
           updatedFolderData
             ? {
                 ...updatedFolderData,
-                itemCount: activeFolder.itemCount,
-                totalSize: activeFolder.totalSize,
+                filesCount: activeFolder.filesCount,
+                totalSize: (activeFolder as any).totalSize,
               }
             : {
                 ...activeFolder,
@@ -1230,18 +1251,63 @@ export default function DriveApp() {
           throw new Error(`Dung lượng tệp (${(file.size / (1024 * 1024)).toFixed(1)} MB) vượt quá giới hạn 200MB của Catbox.moe!`);
         }
 
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("folder", targetFolderKey);
+        let catboxUrl = "";
+        // Step 1: Direct upload from browser to Catbox (bypasses Vercel 4.5MB Serverless limit)
+        try {
+          const directForm = new FormData();
+          directForm.append("reqtype", "fileupload");
+          directForm.append("userhash", "4862d65c4fbf6e0f5433eb011");
+          let upName = file.name;
+          const lower = file.name.toLowerCase();
+          if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
+            upName = upName.replace(/\.docx?$/i, ".zip");
+          }
+          directForm.append("fileToUpload", file, upName);
+
+          const cbRes = await fetch("https://catbox.moe/user/api.php", {
+            method: "POST",
+            body: directForm,
+          });
+          if (cbRes.ok) {
+            const returnedUrl = (await cbRes.text()).trim();
+            if (returnedUrl.startsWith("http")) {
+              catboxUrl = returnedUrl;
+            }
+          }
+        } catch (cbErr) {
+          console.warn("Direct upload error, checking fallback:", cbErr);
+          if (file.size > 4.5 * 1024 * 1024 && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+            throw new Error(`Tải trực tiếp lên Catbox thất bại. Tệp > 4.5MB không thể chuyển qua Vercel Proxy.`);
+          }
+        }
 
         const headers: Record<string, string> = {};
         if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
 
-        const res = await fetch("/api/drive/upload", {
-          method: "POST",
-          headers,
-          body: formData,
-        });
+        let res: Response;
+        if (catboxUrl) {
+          headers["Content-Type"] = "application/json";
+          res = await fetch("/api/drive/upload", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              folder: targetFolderKey,
+              filename: file.name,
+              catboxUrl: catboxUrl,
+              size: file.size,
+            }),
+          });
+        } else {
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("folder", targetFolderKey);
+
+          res = await fetch("/api/drive/upload", {
+            method: "POST",
+            headers,
+            body: formData,
+          });
+        }
 
         const contentType = res.headers.get("content-type") || "";
         if (!contentType.includes("application/json")) {
@@ -1700,6 +1766,70 @@ export default function DriveApp() {
     }
   };
 
+  // Rename File Handler
+  const handleRenameFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminToken) {
+      showToast("Chỉ tài khoản có quyền mới có thể đổi tên tệp!");
+      return;
+    }
+    if (!fileToRename || !activeFolder || !renameFileNameInput.trim()) {
+      showToast("Vui lòng nhập tên mới cho tệp!");
+      return;
+    }
+
+    const trimmedNewName = renameFileNameInput.trim();
+    if (trimmedNewName.toLowerCase() === fileToRename.name.toLowerCase()) {
+      setShowRenameFileModal(false);
+      return;
+    }
+
+    setIsRenamingFile(true);
+    try {
+      const res = await fetch("/api/drive/files/rename", {
+        method: "PUT",
+        headers: {
+          ...authHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          folderId: activeFolder.id,
+          oldName: fileToRename.name,
+          newName: trimmedNewName,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Đổi tên tệp thất bại");
+      }
+
+      showToast(`✅ Đã đổi tên tệp thành "${data.file?.name || trimmedNewName}" thành công!`);
+      const oldFileName = fileToRename.name;
+      const updatedFile = data.file;
+
+      setShowRenameFileModal(false);
+      setFileToRename(null);
+      setRenameFileNameInput("");
+
+      if (updatedFile) {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.name.toLowerCase() === oldFileName.toLowerCase()
+              ? { ...f, ...updatedFile, name: updatedFile.name }
+              : f
+          )
+        );
+      } else {
+        fetchFiles(activeFolder);
+      }
+    } catch (err: any) {
+      showToast(err.message || "Lỗi đổi tên tệp");
+    } finally {
+      setIsRenamingFile(false);
+    }
+  };
+
   // Category counts
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -1959,7 +2089,7 @@ export default function DriveApp() {
             <div className="flex items-center gap-1 bg-gray-900/90 p-1 rounded-xl border border-gray-800 shrink-0">
               <button
                 onClick={() => switchTab("files")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                   activeTab === "files"
                     ? "bg-cyan-500 text-black shadow-sm"
                     : "text-gray-400 hover:text-white"
@@ -1971,16 +2101,18 @@ export default function DriveApp() {
               <button
                 onClick={() => {
                   if (activeFolder && canUploadToFolder(activeFolder)) {
+                    setFolderUploadTarget(activeFolder);
                     quickFileInputRef.current?.click();
                   } else {
                     switchTab("upload");
                   }
                 }}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer bg-gradient-to-r from-pink-600/90 to-cyan-600/90 hover:from-pink-500 hover:to-cyan-500 text-white shadow-sm shadow-pink-500/20 hover:scale-105 active:scale-95"
+                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer bg-gradient-to-r from-pink-600/90 to-cyan-600/90 hover:from-pink-500 hover:to-cyan-500 text-white shadow-sm shadow-pink-500/20 hover:scale-105 active:scale-95"
                 title={activeFolder ? `Tải lên tệp trực tiếp vào "${activeFolder.name}"` : "Tải lên tệp"}
               >
                 <Upload className="w-3.5 h-3.5" />
-                <span>Tải Lên{activeFolder ? ` (${activeFolder.name})` : ""}</span>
+                <span className="hidden sm:inline">Tải Lên{activeFolder ? ` (${activeFolder.name})` : ""}</span>
+                <span className="sm:hidden">Tải Lên</span>
               </button>
             </div>
           )}
@@ -1999,7 +2131,7 @@ export default function DriveApp() {
             <div className="flex items-center gap-1.5 sm:gap-2 pl-1 border-l border-gray-700/50">
               {isAdmin ? (
                 <>
-                  <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <span className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                     <ShieldCheck className="w-3.5 h-3.5" />
                     <span className="truncate max-w-[120px]">Admin: {currentUser?.name || currentUser?.username || "Admin"}</span>
                   </span>
@@ -2009,13 +2141,13 @@ export default function DriveApp() {
                     title="Quản lý và cấp tài khoản tải lên"
                   >
                     <Users className="w-3.5 h-3.5 text-cyan-400" />
-                    <span className="hidden sm:inline">Quản lý tài khoản</span>
+                    <span className="hidden md:inline">Quản lý tài khoản</span>
                   </button>
                 </>
               ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
                   <UserCheck className="w-3.5 h-3.5 text-cyan-400" />
-                  <span className="truncate max-w-[140px]">{currentUser?.name || currentUser?.username} (Tải lên)</span>
+                  <span className="truncate max-w-[120px]">{currentUser?.name || currentUser?.username}</span>
                 </span>
               )}
               <button
@@ -2033,7 +2165,7 @@ export default function DriveApp() {
               title="Đăng nhập tài khoản Admin hoặc tài khoản tải lên do Admin cấp"
             >
               <LogIn className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Đăng nhập</span>
+              <span className="hidden xs:inline sm:inline">Đăng nhập</span>
             </button>
           )}
         </div>
@@ -2081,6 +2213,7 @@ export default function DriveApp() {
                   <button
                     onClick={() => {
                       if (activeFolder) {
+                        setFolderUploadTarget(activeFolder);
                         quickFileInputRef.current?.click();
                         setMobileSidebarOpen(false);
                       } else {
@@ -2111,6 +2244,7 @@ export default function DriveApp() {
                   <button
                     onClick={() => {
                       if (activeFolder && canUploadToFolder(activeFolder)) {
+                        setFolderUploadTarget(activeFolder);
                         quickFileInputRef.current?.click();
                         setMobileSidebarOpen(false);
                       } else {
@@ -2177,8 +2311,6 @@ export default function DriveApp() {
             ) : (
               folders.map((folder) => {
                 const isActive = activeFolder?.id === folder.id;
-                const canDeleteFolder = Boolean(adminToken) && folder.id !== "1" && folder.id !== "img";
-                const canRenameFolder = Boolean(adminToken);
                 const isFolderUnlocked = !folder.hasPassword || unlockedFolderIds.has(folder.id);
                 return (
                   <div
@@ -2186,6 +2318,16 @@ export default function DriveApp() {
                     onClick={() => {
                       handleSelectFolder(folder);
                       setMobileSidebarOpen(false);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setFolderContextMenu({
+                        folder,
+                        x: e.clientX,
+                        y: e.clientY,
+                        isMobileSheet: window.innerWidth < 640,
+                      });
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all group cursor-pointer ${
                       isActive
@@ -2208,45 +2350,32 @@ export default function DriveApp() {
                       <span className="truncate">{folder.name}</span>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {canRenameFolder && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFolderToRename(folder);
-                            setRenameFolderName(folder.name);
-                            setRenameFolderDesc(folder.description || "");
-                            setRenameFolderPassword("");
-                            setRenameRemovePassword(false);
-                            setShowRenameModal(true);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-400 transition-all cursor-pointer"
-                          title={`Đổi tên thư mục "${folder.name}"`}
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {canDeleteFolder && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFolderToDelete(folder);
-                            setShowDeleteFolderModal(true);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-all cursor-pointer"
-                          title={`Xóa thư mục "${folder.name}"`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                    <div className="flex items-center gap-1 shrink-0">
                       {folder.isShared && (
                         <span className="w-2 h-2 rounded-full bg-emerald-400" title="Đang chia sẻ công khai" />
                       )}
                       <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-black/40 text-gray-400">
                         {folder.filesCount}
                       </span>
+                      {/* 3-dots Menu Button for Folder in Sidebar */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          setFolderContextMenu({
+                            folder,
+                            x: rect.left,
+                            y: rect.bottom + 6,
+                            isMobileSheet: window.innerWidth < 640,
+                          });
+                        }}
+                        className="p-1 rounded-md text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/20 transition-all cursor-pointer opacity-70 sm:opacity-0 sm:group-hover:opacity-100"
+                        title={`Tùy chọn thư mục "${folder.name}"`}
+                        aria-label="Tùy chọn thư mục"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
@@ -2298,25 +2427,45 @@ export default function DriveApp() {
           </div>
 
           {/* SUB-HEADER / TOOLBAR */}
-          <div className="p-3 sm:px-6 sm:py-3.5 border-b border-gray-800/80 bg-[#0a0f1d]/50 flex flex-col gap-2.5 shrink-0">
-            {/* ROW 1: Breadcrumbs & View Toggle */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs sm:text-sm min-w-0">
+          <div className="p-2.5 sm:px-6 sm:py-3.5 border-b border-gray-800/80 bg-[#0a0f1d]/50 flex flex-col gap-2 shrink-0">
+            {/* ROW 1: Breadcrumbs, Active Folder Quick Menu & View Toggle */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm min-w-0">
                 <button
                   onClick={handleExitToAllFolders}
-                  className="text-gray-400 hover:text-cyan-400 transition-colors truncate cursor-pointer"
+                  className="text-gray-400 hover:text-cyan-400 transition-colors truncate cursor-pointer font-medium"
                 >
                   Kho lưu trữ
                 </button>
                 {activeFolder && (
                   <>
                     <span className="text-gray-600">/</span>
-                    <span className="font-bold text-white truncate max-w-[200px] sm:max-w-md">
+                    <span className="font-bold text-white truncate max-w-[140px] xs:max-w-[200px] sm:max-w-md">
                       {activeFolder.name}
                     </span>
-                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shrink-0">
+                    <span className="text-[10px] sm:text-[11px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shrink-0">
                       {filteredFiles.length} tệp
                     </span>
+
+                    {/* Active Folder 3-dots Menu Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setFolderContextMenu({
+                          folder: activeFolder,
+                          x: rect.left,
+                          y: rect.bottom + 6,
+                          isMobileSheet: window.innerWidth < 640,
+                        });
+                      }}
+                      className="p-1 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/20 transition-all cursor-pointer shrink-0"
+                      title={`Tùy chọn thư mục "${activeFolder.name}"`}
+                      aria-label="Tùy chọn thư mục"
+                    >
+                      <MoreVertical className="w-3.5 h-3.5" />
+                    </button>
                   </>
                 )}
               </div>
@@ -2350,12 +2499,13 @@ export default function DriveApp() {
               </div>
             </div>
 
-            {/* ROW 2: Filter, Multi-select, Share Folder */}
+            {/* ROW 2: Filter, Multi-select, Actions */}
             {activeFolder && (
-              <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5 scrollbar-none">
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-gray-700 bg-gray-800/80 text-xs text-gray-300">
-                    <ArrowUpDown className="w-3 h-3 text-cyan-400" />
+              <div className="flex items-center justify-between gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 scrollbar-none">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  {/* Sort Selection */}
+                  <div className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-gray-700 bg-gray-800/80 text-xs text-gray-300 shrink-0">
+                    <ArrowUpDown className="w-3 h-3 text-cyan-400 shrink-0" />
                     <select
                       value={sortBy}
                       onChange={(e: any) => setSortBy(e.target.value)}
@@ -2370,12 +2520,13 @@ export default function DriveApp() {
                     </select>
                   </div>
 
+                  {/* Multi-select Toggle */}
                   <button
                     onClick={() => {
                       setIsSelectMode(!isSelectMode);
                       if (isSelectMode) setSelectedFileNames(new Set());
                     }}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                    className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer shrink-0 ${
                       isSelectMode
                         ? "bg-cyan-500 text-black border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)]"
                         : "bg-gray-800/80 text-gray-300 border-gray-700 hover:text-white hover:border-gray-600"
@@ -2385,6 +2536,46 @@ export default function DriveApp() {
                     <span>{isSelectMode ? "Thoát chọn" : "Chọn nhiều"}</span>
                   </button>
 
+                  {/* Upload button for Active Folder */}
+                  {canUploadToFolder(activeFolder) ? (
+                    <button
+                      onClick={() => {
+                        setFolderUploadTarget(activeFolder);
+                        quickFileInputRef.current?.click();
+                      }}
+                      className="px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-pink-500/25 to-cyan-500/25 hover:from-pink-500/40 hover:to-cyan-500/40 border border-pink-500/40 text-pink-300 hover:text-white transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 shrink-0"
+                      title={`Tải tệp trực tiếp vào thư mục "${activeFolder.name}"`}
+                    >
+                      <Upload className="w-3.5 h-3.5 text-pink-400" />
+                      <span>+ Tải Lên</span>
+                    </button>
+                  ) : !currentUser ? (
+                    <button
+                      onClick={() => setShowLoginModal(true)}
+                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-cyan-500/30 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/50 hover:text-white transition-all cursor-pointer shadow-sm shrink-0"
+                      title="Đăng nhập tài khoản do Admin cấp để tải tệp lên thư mục này"
+                    >
+                      <LogIn className="w-3.5 h-3.5 text-cyan-400" />
+                      <span className="hidden sm:inline">Đăng nhập để tải lên</span>
+                      <span className="sm:hidden">Đăng nhập</span>
+                    </button>
+                  ) : null}
+
+                  {/* Share Folder Button */}
+                  <button
+                    onClick={() => {
+                      setShareModalFolder(activeFolder);
+                      setShowShareModal(true);
+                    }}
+                    className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-gray-700 bg-gray-800/80 text-gray-300 hover:text-white hover:border-gray-600 transition-all cursor-pointer shrink-0"
+                    title="Chia sẻ toàn bộ thư mục này"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="hidden sm:inline">Chia sẻ Thư mục</span>
+                    <span className="sm:hidden">Chia sẻ</span>
+                  </button>
+
+                  {/* Desktop Quick Shortcuts for Admin */}
                   {Boolean(adminToken) && (
                     <button
                       onClick={() => {
@@ -2395,7 +2586,7 @@ export default function DriveApp() {
                         setRenameRemovePassword(false);
                         setShowRenameModal(true);
                       }}
-                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/60 hover:text-white transition-all cursor-pointer shadow-sm"
+                      className="hidden md:inline-flex px-3 py-1 rounded-full text-xs font-semibold items-center gap-1.5 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 hover:bg-cyan-900/60 hover:text-white transition-all cursor-pointer shadow-sm shrink-0"
                       title={`Đổi tên thư mục "${activeFolder.name}"`}
                     >
                       <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
@@ -2409,7 +2600,7 @@ export default function DriveApp() {
                         lockFolder(activeFolder.id, true);
                         handleExitToAllFolders();
                       }}
-                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-amber-500/40 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-white transition-all cursor-pointer shadow-sm"
+                      className="hidden sm:inline-flex px-3 py-1 rounded-full text-xs font-semibold items-center gap-1.5 border border-amber-500/40 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-white transition-all cursor-pointer shadow-sm shrink-0"
                       title="Khóa lại thư mục này"
                     >
                       <Lock className="w-3.5 h-3.5 text-amber-400" />
@@ -2417,51 +2608,19 @@ export default function DriveApp() {
                     </button>
                   )}
 
-                  <button
-                    onClick={() => {
-                      setShareModalFolder(activeFolder);
-                      setShowShareModal(true);
-                    }}
-                    className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-gray-700 bg-gray-800/80 text-gray-300 hover:text-white hover:border-gray-600 transition-all cursor-pointer"
-                    title="Chia sẻ toàn bộ thư mục này"
-                  >
-                    <Share2 className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Chia sẻ Thư mục</span>
-                  </button>
-
                   {activeFolder.id !== "img" && activeFolder.id !== "1" && Boolean(adminToken) && (
                     <button
                       onClick={() => {
                         setFolderToDelete(activeFolder);
                         setShowDeleteFolderModal(true);
                       }}
-                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-900/60 hover:text-white hover:border-red-400 transition-all cursor-pointer shadow-sm"
+                      className="hidden md:inline-flex px-3 py-1 rounded-full text-xs font-semibold items-center gap-1.5 border border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-900/60 hover:text-white hover:border-red-400 transition-all cursor-pointer shadow-sm shrink-0"
                       title={`Xóa vĩnh viễn thư mục "${activeFolder.name}"`}
                     >
                       <Trash2 className="w-3.5 h-3.5 text-red-400" />
                       <span>Xóa Thư Mục</span>
                     </button>
                   )}
-
-                  {canUploadToFolder(activeFolder) ? (
-                    <button
-                      onClick={() => quickFileInputRef.current?.click()}
-                      className="px-3.5 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 bg-gradient-to-r from-pink-500/25 to-cyan-500/25 hover:from-pink-500/40 hover:to-cyan-500/40 border border-pink-500/40 text-pink-300 hover:text-white transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
-                      title={`Tải tệp trực tiếp vào thư mục "${activeFolder.name}"`}
-                    >
-                      <Upload className="w-3.5 h-3.5 text-pink-400" />
-                      <span>+ Tải Lên Tệp</span>
-                    </button>
-                  ) : !currentUser ? (
-                    <button
-                      onClick={() => setShowLoginModal(true)}
-                      className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border border-cyan-500/30 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-900/50 hover:text-white transition-all cursor-pointer shadow-sm"
-                      title="Đăng nhập tài khoản do Admin cấp để tải tệp lên thư mục này"
-                    >
-                      <LogIn className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Đăng nhập để tải lên</span>
-                    </button>
-                  ) : null}
                 </div>
 
                 {isSelectMode && filteredFiles.length > 0 && (
@@ -2574,13 +2733,21 @@ export default function DriveApp() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {folders.map((folder) => {
-                    const canDeleteFolder = Boolean(adminToken) && folder.id !== "1" && folder.id !== "img";
-                    const canRenameFolder = Boolean(adminToken);
                     const isFolderUnlocked = !folder.hasPassword || unlockedFolderIds.has(folder.id);
                     return (
                       <div
                         key={folder.id}
                         onClick={() => handleSelectFolder(folder)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setFolderContextMenu({
+                            folder,
+                            x: e.clientX,
+                            y: e.clientY,
+                            isMobileSheet: window.innerWidth < 640,
+                          });
+                        }}
                         className="group p-5 rounded-2xl bg-gray-800/40 hover:bg-gray-800/80 border border-gray-800 hover:border-cyan-500/50 transition-all cursor-pointer shadow-lg hover:shadow-[0_0_20px_rgba(34,211,238,0.15)] flex flex-col justify-between space-y-4"
                       >
                         <div className="flex items-start justify-between">
@@ -2617,38 +2784,26 @@ export default function DriveApp() {
                                 Riêng tư
                               </span>
                             )}
-                            {canRenameFolder && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFolderToRename(folder);
-                                  setRenameFolderName(folder.name);
-                                  setRenameFolderDesc(folder.description || "");
-                                  setRenameFolderPassword("");
-                                  setRenameRemovePassword(false);
-                                  setShowRenameModal(true);
-                                }}
-                                className="p-1 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/20 transition-all cursor-pointer"
-                                title={`Đổi tên thư mục "${folder.name}"`}
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {canDeleteFolder && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFolderToDelete(folder);
-                                  setShowDeleteFolderModal(true);
-                                }}
-                                className="p-1 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/20 transition-all cursor-pointer"
-                                title={`Xóa thư mục "${folder.name}"`}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+
+                            {/* 3-dots Menu Button for Folder in Grid View */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                setFolderContextMenu({
+                                  folder,
+                                  x: rect.left,
+                                  y: rect.bottom + 6,
+                                  isMobileSheet: window.innerWidth < 640,
+                                });
+                              }}
+                              className="p-1.5 rounded-lg bg-black/60 hover:bg-gray-800 text-gray-300 hover:text-cyan-400 border border-white/10 transition-all cursor-pointer shadow-sm"
+                              title={`Tùy chọn thư mục "${folder.name}"`}
+                              aria-label="Tùy chọn thư mục"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
 
@@ -3203,6 +3358,23 @@ export default function DriveApp() {
                 )}
               </button>
 
+              {/* Rename File Button */}
+              {adminToken && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFileToRename(currentLightboxFile);
+                    setRenameFileNameInput(currentLightboxFile.name);
+                    setShowRenameFileModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-cyan-500/50 text-gray-200 hover:text-cyan-300 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Đổi tên tệp tin"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="hidden sm:inline">Đổi tên</span>
+                </button>
+              )}
+
               {/* Delete / GitHub Protected Indicator */}
               {adminToken && (
                 currentLightboxFile.isGithub ? (
@@ -3435,19 +3607,22 @@ export default function DriveApp() {
         </div>
       )}
 
-      {/* HIDDEN QUICK FILE INPUT (Admin Only) */}
+      {/* HIDDEN QUICK FILE INPUT */}
       <input
         ref={quickFileInputRef}
         type="file"
         multiple
         onChange={(e) => {
-          if (!isAdmin) {
-            showToast("❌ Chỉ Quản trị viên (Admin) mới có quyền tải tệp lên!");
+          if (!canUpload) {
+            showToast("❌ Bạn cần đăng nhập tài khoản có quyền tải lên để thêm tệp!");
+            setShowLoginModal(true);
             e.target.value = "";
             return;
           }
           if (e.target.files && e.target.files.length > 0) {
-            uploadFilesDirectly(e.target.files, activeFolder || folders[0]);
+            const dest = folderUploadTarget || activeFolder || folders[0];
+            uploadFilesDirectly(e.target.files, dest);
+            setFolderUploadTarget(null);
             e.target.value = "";
           }
         }}
@@ -4021,6 +4196,82 @@ export default function DriveApp() {
         </div>
       )}
 
+      {/* RENAME FILE MODAL */}
+      {showRenameFileModal && fileToRename && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
+          <div className="max-w-md w-full rounded-2xl bg-[#0b1120] border border-cyan-500/40 p-6 space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.3)]">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Đổi Tên Tệp Tin</h3>
+                  <p className="text-[11px] text-gray-400 font-mono">Thay đổi tên hiển thị trong thư mục</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowRenameFileModal(false);
+                  setFileToRename(null);
+                }}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRenameFile} className="space-y-4">
+              <div className="p-3 rounded-xl bg-gray-900/80 border border-gray-800 text-xs space-y-1">
+                <span className="text-gray-400 block font-mono text-[11px]">Tệp gốc hiện tại:</span>
+                <span className="text-cyan-300 font-semibold truncate block font-sans text-sm" title={fileToRename.name}>
+                  {fileToRename.name}
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-300 block mb-1.5">
+                  Tên tệp mới <span className="text-cyan-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={renameFileNameInput}
+                  onChange={(e) => setRenameFileNameInput(e.target.value)}
+                  placeholder="Nhập tên tệp mới..."
+                  className="w-full bg-gray-900 border border-gray-700 focus:border-cyan-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none transition-colors font-sans"
+                />
+                <p className="text-[10px] text-gray-400 mt-1.5">
+                  💡 Gợi ý: Nếu không nhập đuôi tệp (như .pdf, .docx, .png), hệ thống sẽ tự động giữ nguyên đuôi mở rộng ban đầu.
+                </p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRenameFileModal(false);
+                    setFileToRename(null);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold text-xs cursor-pointer transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRenamingFile || !renameFileNameInput.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-500/25 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isRenamingFile ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>{isRenamingFile ? "Đang lưu..." : "Đổi Tên Tệp"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 5b. INDIVIDUAL FILE SHARE MODAL */}
       {shareModalFile && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 animate-fadeIn select-none">
@@ -4491,6 +4742,28 @@ export default function DriveApp() {
                     </div>
                   </button>
 
+                  {/* Rename file */}
+                  {adminToken && (
+                    <button
+                      onClick={() => {
+                        const file = contextMenu.file;
+                        setContextMenu(null);
+                        setFileToRename(file);
+                        setRenameFileNameInput(file.name);
+                        setShowRenameFileModal(true);
+                      }}
+                      className="w-full px-3 py-3 rounded-xl hover:bg-cyan-500/10 text-cyan-400 hover:text-cyan-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                    >
+                      <div className="p-2 rounded-lg bg-cyan-500/15 text-cyan-400">
+                        <Edit3 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-white">Đổi tên tệp</div>
+                        <div className="text-[11px] text-gray-400">Thay đổi tên hiển thị và định dạng của tệp tin</div>
+                      </div>
+                    </button>
+                  )}
+
                   {/* Delete file (Admin Only) */}
                   {adminToken && (
                     contextMenu.file.isGithub ? (
@@ -4634,6 +4907,23 @@ export default function DriveApp() {
                   <span className="font-medium">Chia sẻ tệp</span>
                 </button>
 
+                {/* Rename File Option */}
+                {adminToken && (
+                  <button
+                    onClick={() => {
+                      const file = contextMenu.file;
+                      setContextMenu(null);
+                      setFileToRename(file);
+                      setRenameFileNameInput(file.name);
+                      setShowRenameFileModal(true);
+                    }}
+                    className="w-full px-2.5 py-2 rounded-lg hover:bg-cyan-500/15 text-gray-200 hover:text-cyan-300 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="font-medium">Đổi tên tệp</span>
+                  </button>
+                )}
+
                 {/* Delete Option (Admin Only) */}
                 {adminToken && (
                   contextMenu.file.isGithub ? (
@@ -4704,6 +4994,376 @@ export default function DriveApp() {
                   <Copy className="w-3.5 h-3.5 text-gray-400" />
                   <span>Sao chép liên kết</span>
                 </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* FOLDER CONTEXT MENU (PC RIGHT-CLICK) & ACTION SHEET (MOBILE 3-DOTS) */}
+      {folderContextMenu && (
+        <>
+          {folderContextMenu.isMobileSheet ? (
+            /* MOBILE FOLDER ACTION SHEET (SLIDE UP BOTTOM SHEET) */
+            <div
+              className="fixed inset-0 z-50 flex flex-col justify-end bg-black/70 backdrop-blur-sm animate-fadeIn select-none sm:hidden"
+              onClick={() => setFolderContextMenu(null)}
+            >
+              <div
+                className="w-full bg-[#0c1222] border-t border-cyan-500/30 rounded-t-2xl p-4 space-y-3 shadow-2xl animate-slideUp max-h-[85vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Drag Handle Indicator */}
+                <div className="w-12 h-1 bg-gray-600 rounded-full mx-auto mb-2 opacity-70" />
+
+                {/* Folder Header Info */}
+                <div className="flex items-center gap-3 pb-3 border-b border-gray-800">
+                  <div className="w-11 h-11 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                    {folderContextMenu.folder.hasPassword ? (
+                      unlockedFolderIds.has(folderContextMenu.folder.id) ? (
+                        <FolderLock className="w-6 h-6 text-emerald-400" />
+                      ) : (
+                        <FolderLock className="w-6 h-6 text-amber-400" />
+                      )
+                    ) : folderContextMenu.folder.isShared ? (
+                      <FolderCheck className="w-6 h-6 text-emerald-400" />
+                    ) : (
+                      <Folder className="w-6 h-6 text-cyan-400" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-white truncate" title={folderContextMenu.folder.name}>
+                      {folderContextMenu.folder.name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+                      <span>{folderContextMenu.folder.filesCount} tệp tin</span>
+                      <span>•</span>
+                      {folderContextMenu.folder.isShared ? (
+                        <span className="text-[10px] text-emerald-400 font-mono">Công khai</span>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 font-mono">Riêng tư</span>
+                      )}
+                      {folderContextMenu.folder.hasPassword && (
+                        <>
+                          <span>•</span>
+                          <span className="text-[10px] text-amber-400 font-mono flex items-center gap-0.5">
+                            <Lock className="w-2.5 h-2.5" /> Có MK
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setFolderContextMenu(null)}
+                    className="p-1 rounded-lg text-gray-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Action Items List */}
+                <div className="space-y-1">
+                  {/* Open Folder */}
+                  <button
+                    onClick={() => {
+                      const f = folderContextMenu.folder;
+                      setFolderContextMenu(null);
+                      handleSelectFolder(f);
+                    }}
+                    className="w-full px-3 py-3 rounded-xl hover:bg-cyan-500/10 text-cyan-400 hover:text-cyan-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                  >
+                    <div className="p-2 rounded-lg bg-cyan-500/15 text-cyan-400">
+                      <Folder className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Mở thư mục</div>
+                      <div className="text-[11px] text-gray-400">Xem toàn bộ tệp tin bên trong thư mục</div>
+                    </div>
+                  </button>
+
+                  {/* Upload to this folder */}
+                  {canUploadToFolder(folderContextMenu.folder) && (
+                    <button
+                      onClick={() => {
+                        const f = folderContextMenu.folder;
+                        setFolderContextMenu(null);
+                        setFolderUploadTarget(f);
+                        quickFileInputRef.current?.click();
+                      }}
+                      className="w-full px-3 py-3 rounded-xl hover:bg-pink-500/10 text-pink-400 hover:text-pink-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                    >
+                      <div className="p-2 rounded-lg bg-pink-500/15 text-pink-400">
+                        <Upload className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-white">Tải lên vào thư mục này</div>
+                        <div className="text-[11px] text-gray-400">Thêm tệp tin trực tiếp vào thư mục</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Share folder */}
+                  <button
+                    onClick={() => {
+                      const f = folderContextMenu.folder;
+                      setFolderContextMenu(null);
+                      setShareModalFolder(f);
+                      setShowShareModal(true);
+                    }}
+                    className="w-full px-3 py-3 rounded-xl hover:bg-cyan-500/10 text-cyan-400 hover:text-cyan-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                  >
+                    <div className="p-2 rounded-lg bg-cyan-500/15 text-cyan-400">
+                      <Share2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Chia sẻ thư mục</div>
+                      <div className="text-[11px] text-gray-400">Lấy link chia sẻ hoặc cấu hình bảo mật</div>
+                    </div>
+                  </button>
+
+                  {/* Copy Link */}
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}/drive?share=${encodeURIComponent(folderContextMenu.folder.id)}`;
+                      navigator.clipboard.writeText(link);
+                      showToast(`Đã sao chép liên kết thư mục "${folderContextMenu.folder.name}"!`);
+                      setFolderContextMenu(null);
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl hover:bg-white/5 text-gray-200 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                  >
+                    <div className="p-2 rounded-lg bg-white/5 text-gray-300">
+                      <Copy className="w-4 h-4" />
+                    </div>
+                    <span>Sao chép liên kết thư mục</span>
+                  </button>
+
+                  {/* Lock folder again if unlocked */}
+                  {folderContextMenu.folder.hasPassword && unlockedFolderIds.has(folderContextMenu.folder.id) && (
+                    <button
+                      onClick={() => {
+                        const f = folderContextMenu.folder;
+                        setFolderContextMenu(null);
+                        lockFolder(f.id, true);
+                        if (activeFolder?.id === f.id) {
+                          handleExitToAllFolders();
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl hover:bg-amber-500/10 text-amber-400 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                    >
+                      <div className="p-2 rounded-lg bg-amber-500/15 text-amber-400">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <span>Khóa lại thư mục</span>
+                    </button>
+                  )}
+
+                  {/* Rename & Settings (Admin Only) */}
+                  {adminToken && (
+                    <button
+                      onClick={() => {
+                        const f = folderContextMenu.folder;
+                        setFolderContextMenu(null);
+                        setFolderToRename(f);
+                        setRenameFolderName(f.name);
+                        setRenameFolderDesc(f.description || "");
+                        setRenameFolderPassword("");
+                        setRenameRemovePassword(false);
+                        setShowRenameModal(true);
+                      }}
+                      className="w-full px-3 py-3 rounded-xl hover:bg-cyan-500/10 text-cyan-400 hover:text-cyan-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                    >
+                      <div className="p-2 rounded-lg bg-cyan-500/15 text-cyan-400">
+                        <Edit3 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-white">Đổi tên & Cài đặt</div>
+                        <div className="text-[11px] text-gray-400">Đổi tên, mô tả hoặc cài đặt mật khẩu</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Delete Folder (Admin Only) */}
+                  {adminToken && folderContextMenu.folder.id !== "1" && folderContextMenu.folder.id !== "img" && (
+                    <button
+                      onClick={() => {
+                        const f = folderContextMenu.folder;
+                        setFolderContextMenu(null);
+                        setFolderToDelete(f);
+                        setShowDeleteFolderModal(true);
+                      }}
+                      className="w-full px-3 py-3 rounded-xl hover:bg-red-500/15 text-red-400 hover:text-red-300 font-medium text-sm flex items-center gap-3 transition-colors text-left cursor-pointer"
+                    >
+                      <div className="p-2 rounded-lg bg-red-500/15 text-red-400">
+                        <Trash2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-red-400">Xóa thư mục</div>
+                        <div className="text-[11px] text-gray-400">Xóa thư mục và toàn bộ tệp tin bên trong</div>
+                      </div>
+                    </button>
+                  )}
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => setFolderContextMenu(null)}
+                    className="w-full py-2.5 rounded-xl bg-gray-800 text-gray-300 font-medium text-xs hover:bg-gray-700 transition-colors cursor-pointer"
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* DESKTOP FOLDER CONTEXT MENU (FLOATING POPOVER AT MOUSE POSITION) */
+            <div
+              className="fixed z-50 bg-[#0d1424]/95 backdrop-blur-md border border-cyan-500/40 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.8),0_0_15px_rgba(34,211,238,0.2)] p-1.5 w-64 animate-fadeIn select-none text-xs"
+              style={{
+                top: `${Math.max(10, Math.min(folderContextMenu.y, window.innerHeight - 300))}px`,
+                left: `${Math.max(10, Math.min(folderContextMenu.x, window.innerWidth - 270))}px`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header Info */}
+              <div className="px-2.5 py-1.5 border-b border-gray-800/80 mb-1">
+                <p className="font-semibold text-white truncate text-[11px] flex items-center gap-1.5" title={folderContextMenu.folder.name}>
+                  <Folder className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span className="truncate">{folderContextMenu.folder.name}</span>
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-gray-400">
+                  <span>{folderContextMenu.folder.filesCount} tệp</span>
+                  <span>•</span>
+                  {folderContextMenu.folder.isShared ? (
+                    <span className="text-emerald-400 font-mono">Công khai</span>
+                  ) : (
+                    <span className="text-gray-400 font-mono">Riêng tư</span>
+                  )}
+                  {folderContextMenu.folder.hasPassword && (
+                    <>
+                      <span>•</span>
+                      <span className="text-amber-400 font-mono flex items-center gap-0.5">
+                        <Lock className="w-2.5 h-2.5" /> Có MK
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Menu Actions */}
+              <div className="space-y-0.5">
+                {/* Open Folder */}
+                <button
+                  onClick={() => {
+                    const f = folderContextMenu.folder;
+                    setFolderContextMenu(null);
+                    handleSelectFolder(f);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-lg hover:bg-cyan-500/15 text-cyan-300 hover:text-cyan-200 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                >
+                  <Folder className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="font-medium">Mở thư mục</span>
+                </button>
+
+                {/* Upload into this folder */}
+                {canUploadToFolder(folderContextMenu.folder) && (
+                  <button
+                    onClick={() => {
+                      const f = folderContextMenu.folder;
+                      setFolderContextMenu(null);
+                      setFolderUploadTarget(f);
+                      quickFileInputRef.current?.click();
+                    }}
+                    className="w-full px-2.5 py-1.5 rounded-lg hover:bg-pink-500/15 text-pink-300 hover:text-pink-200 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-pink-400" />
+                    <span className="font-medium">Tải tệp vào thư mục này</span>
+                  </button>
+                )}
+
+                {/* Share Option */}
+                <button
+                  onClick={() => {
+                    const f = folderContextMenu.folder;
+                    setFolderContextMenu(null);
+                    setShareModalFolder(f);
+                    setShowShareModal(true);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-lg hover:bg-cyan-500/15 text-gray-200 hover:text-cyan-300 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Chia sẻ thư mục</span>
+                </button>
+
+                {/* Copy Link */}
+                <button
+                  onClick={() => {
+                    const link = `${window.location.origin}/drive?share=${encodeURIComponent(folderContextMenu.folder.id)}`;
+                    navigator.clipboard.writeText(link);
+                    showToast(`Đã sao chép liên kết thư mục "${folderContextMenu.folder.name}"!`);
+                    setFolderContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-gray-200 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Sao chép liên kết</span>
+                </button>
+
+                {/* Lock Folder if unlocked */}
+                {folderContextMenu.folder.hasPassword && unlockedFolderIds.has(folderContextMenu.folder.id) && (
+                  <button
+                    onClick={() => {
+                      const f = folderContextMenu.folder;
+                      setFolderContextMenu(null);
+                      lockFolder(f.id, true);
+                      if (activeFolder?.id === f.id) {
+                        handleExitToAllFolders();
+                      }
+                    }}
+                    className="w-full px-2.5 py-1.5 rounded-lg hover:bg-amber-500/15 text-amber-300 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Khóa lại thư mục</span>
+                  </button>
+                )}
+
+                {/* Rename & Settings Option (Admin Only) */}
+                {adminToken && (
+                  <button
+                    onClick={() => {
+                      const f = folderContextMenu.folder;
+                      setFolderContextMenu(null);
+                      setFolderToRename(f);
+                      setRenameFolderName(f.name);
+                      setRenameFolderDesc(f.description || "");
+                      setRenameFolderPassword("");
+                      setRenameRemovePassword(false);
+                      setShowRenameModal(true);
+                    }}
+                    className="w-full px-2.5 py-1.5 rounded-lg hover:bg-cyan-500/15 text-gray-200 hover:text-cyan-300 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Đổi tên & Cài đặt</span>
+                  </button>
+                )}
+
+                {/* Delete Option (Admin Only) */}
+                {adminToken && folderContextMenu.folder.id !== "1" && folderContextMenu.folder.id !== "img" && (
+                  <>
+                    <div className="my-1 border-t border-gray-800" />
+                    <button
+                      onClick={() => {
+                        const f = folderContextMenu.folder;
+                        setFolderContextMenu(null);
+                        setFolderToDelete(f);
+                        setShowDeleteFolderModal(true);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      <span className="font-medium">Xóa thư mục</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

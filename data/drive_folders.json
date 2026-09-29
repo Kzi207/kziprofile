@@ -72,5 +72,19 @@
     "allowDownload": true,
     "createdAt": "2026-09-25T14:37:28.680Z",
     "updatedAt": "2026-09-25T15:49:00.893Z"
+  },
+  {
+    "id": "music",
+    "name": "Music",
+    "folder": "Music",
+    "description": "",
+    "isShared": true,
+    "shareToken": "music-auto-mumadkov",
+    "hasPassword": false,
+    "allowEdit": false,
+    "allowDownload": true,
+    "sharedFiles": [],
+    "createdAt": "2026-09-29T06:19:25.567Z",
+    "updatedAt": "2026-09-29T06:19:25.567Z"
   }
 ]

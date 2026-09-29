@@ -28,21 +28,22 @@ export default function Hero({ profile, heroTitle, heroSubtitle, statusActive }:
 
   useEffect(() => {
     const currentFullText = subtitleOptions[optionIdx];
+    const chars = Array.from(currentFullText);
     let timer: NodeJS.Timeout;
 
     if (isDeleting) {
       timer = setTimeout(() => {
-        setTypedText(currentFullText.substring(0, charIdx - 1));
+        setTypedText(chars.slice(0, charIdx - 1).join(""));
         setCharIdx(prev => prev - 1);
       }, 50);
     } else {
       timer = setTimeout(() => {
-        setTypedText(currentFullText.substring(0, charIdx + 1));
+        setTypedText(chars.slice(0, charIdx + 1).join(""));
         setCharIdx(prev => prev + 1);
       }, 100);
     }
 
-    if (!isDeleting && charIdx === currentFullText.length) {
+    if (!isDeleting && charIdx === chars.length) {
       // Pause at full text
       timer = setTimeout(() => setIsDeleting(true), 1500);
     } else if (isDeleting && charIdx === 0) {

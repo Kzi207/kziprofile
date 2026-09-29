@@ -1759,6 +1759,17 @@ async function getStoredFolders(): Promise<DriveFolderMeta[]> {
     }
   }
 
+  // --- Step 2.5: Also auto-discover folders from Database Files ---
+  try {
+    const dbFiles = await getStoredDriveFiles();
+    for (const dbf of dbFiles) {
+      if (dbf.folderId && !discoveredSet.has(dbf.folderId.toLowerCase())) {
+        discoveredSet.add(dbf.folderId.toLowerCase());
+        discoveredFolderNames.push(dbf.folderId);
+      }
+    }
+  } catch (e) {}
+
   // --- Step 3: Merge discovered folders with stored metadata ---
   const storedMap = new Map<string, DriveFolderMeta>();
   for (const sf of storedFolders) {
@@ -1805,6 +1816,10 @@ async function getStoredFolders(): Promise<DriveFolderMeta[]> {
     };
 
     mergedFolders.push(newFolder);
+    existingIds.add(lowerName);
+    existingIds.add(slugged);
+    existingFolderNames.add(lowerName);
+    existingFolderNames.add(slugged);
   }
 
   inMemoryFoldersCache = mergedFolders;
@@ -1842,7 +1857,7 @@ async function resolveFolder(folderKey: string): Promise<{ folder: DriveFolderMe
   const rawKey = String(folderKey || "").trim();
   const slugKey = slugifyFolderName(rawKey);
 
-  const matched = folders.find(
+  let matched = folders.find(
     (f: any) =>
       String(f.id).toLowerCase() === rawKey.toLowerCase() ||
       String(f.folder || "").toLowerCase() === rawKey.toLowerCase() ||
@@ -1852,6 +1867,37 @@ async function resolveFolder(folderKey: string): Promise<{ folder: DriveFolderMe
       slugifyFolderName(String(f.name)) === slugKey ||
       slugifyFolderName(String(f.folder || "")) === slugKey
   ) || null;
+
+  if (!matched) {
+    // If not found in stored folders, check DB files
+    try {
+      const dbFiles = await getStoredDriveFiles();
+      const hasDbFiles = dbFiles.some(
+        (f) =>
+          String(f.folderId || "").toLowerCase() === rawKey.toLowerCase() ||
+          slugifyFolderName(String(f.folderId || "")) === slugKey
+      );
+      if (hasDbFiles) {
+        const now = new Date().toISOString();
+        matched = {
+          id: slugKey || rawKey,
+          name: rawKey,
+          folder: rawKey,
+          description: "",
+          isShared: true,
+          shareToken: `${slugKey}-auto-${Date.now().toString(36)}`,
+          hasPassword: false,
+          allowEdit: false,
+          allowDownload: true,
+          sharedFiles: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+        folders.push(matched);
+        saveStoredFolders(folders).catch(() => {});
+      }
+    } catch {}
+  }
 
   const rawName = matched ? (matched.folder || matched.name || matched.id) : folderKey;
   const slugName = slugifyFolderName(rawName);
@@ -1931,38 +1977,62 @@ function resolveFolderPaths(folderId: string): { githubPath: string; localDirs: 
 }
 
 async function getFolderFilesCount(folderKey: string): Promise<number> {
-  // Use cache to avoid repeated filesystem reads (60s TTL)
-  const cached = folderCountCache.get(folderKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.count;
-  }
-
   try {
-    const { localDirs } = await resolveFolderDirs(folderKey);
-    let count = 0;
+    const { folder, folderName, localDirs } = await resolveFolder(folderKey);
     const countedFiles = new Set<string>();
+
+    // 1. Count files on disk
     for (const d of localDirs) {
       if (fs.existsSync(d)) {
         try {
           const items = fs.readdirSync(d);
           for (const item of items) {
             if (!isDriveSupportedFile(item)) continue;
-            if (!countedFiles.has(item)) {
-              const itemPath = path.join(d, item);
-              try {
-                if (fs.statSync(itemPath).isFile()) {
-                  countedFiles.add(item);
-                  count++;
-                }
-              } catch {}
-            }
+            const itemPath = path.join(d, item);
+            try {
+              if (fs.statSync(itemPath).isFile()) {
+                countedFiles.add(item.toLowerCase());
+              }
+            } catch {}
           }
         } catch (e) {}
       }
     }
-    // Cache result for 60 seconds
-    folderCountCache.set(folderKey, { count, expiresAt: Date.now() + 60_000 });
-    return count;
+
+    // 2. Count files in Neon DB & Catbox
+    try {
+      const dbFiles = await getStoredDriveFiles();
+      const rawKeyLower = String(folderKey || "").toLowerCase();
+      const slugKey = slugifyFolderName(rawKeyLower);
+      const fIdLower = folder ? String(folder.id).toLowerCase() : "";
+      const fNameLower = folder ? String(folder.name).toLowerCase() : "";
+      const fSlug = folder ? slugifyFolderName(String(folder.id)) : "";
+      const fNameSlug = folder ? slugifyFolderName(fNameLower) : "";
+
+      for (const dbf of dbFiles) {
+        const dbfFolder = String(dbf.folderId || "").toLowerCase();
+        const dbfSlug = slugifyFolderName(dbfFolder);
+
+        if (
+          dbfFolder === rawKeyLower ||
+          dbfSlug === slugKey ||
+          dbfSlug === rawKeyLower ||
+          dbfFolder === slugKey ||
+          (folder && (
+            dbfFolder === fIdLower ||
+            dbfFolder === fNameLower ||
+            dbfSlug === fSlug ||
+            dbfSlug === fNameSlug ||
+            dbfFolder === fSlug ||
+            dbfFolder === fNameSlug
+          ))
+        ) {
+          countedFiles.add(dbf.name.toLowerCase());
+        }
+      }
+    } catch (dbErr) {}
+
+    return countedFiles.size;
   } catch (e) {
     return 0;
   }
@@ -1988,14 +2058,37 @@ export interface DriveFileRecord {
   updatedAt: string;
 }
 
+function fixMojibake(str: string): string {
+  if (!str) return str;
+  try {
+    if (/[\u00C0-\u00FF]/.test(str)) {
+      const decoded = Buffer.from(str, "latin1").toString("utf-8");
+      if (decoded && !decoded.includes("\uFFFD")) return decoded;
+    }
+  } catch {}
+  return str;
+}
+
+function sanitizeFileRecord(r: DriveFileRecord): DriveFileRecord {
+  const cleanName = fixMojibake(r.name);
+  const cleanFolderId = fixMojibake(r.folderId);
+  return {
+    ...r,
+    name: cleanName,
+    folderId: cleanFolderId,
+    id: `${cleanFolderId}:${cleanName}`,
+  };
+}
+
 async function getStoredDriveFiles(): Promise<DriveFileRecord[]> {
   try {
     const row = await prisma.setting.findUnique({ where: { key: "drive_files_db" } });
     if (row && row.value) {
       const parsed = JSON.parse(row.value);
       if (Array.isArray(parsed)) {
-        inMemoryFilesCache = parsed;
-        return parsed;
+        const sanitized = parsed.map(sanitizeFileRecord);
+        inMemoryFilesCache = sanitized;
+        return sanitized;
       }
     }
   } catch (e) {
@@ -2011,9 +2104,10 @@ async function getStoredDriveFiles(): Promise<DriveFileRecord[]> {
     try {
       const parsed = JSON.parse(fs.readFileSync(dataFile, "utf-8"));
       if (Array.isArray(parsed)) {
-        inMemoryFilesCache = parsed;
-        saveStoredDriveFiles(parsed).catch(() => {});
-        return parsed;
+        const sanitized = parsed.map(sanitizeFileRecord);
+        inMemoryFilesCache = sanitized;
+        saveStoredDriveFiles(sanitized).catch(() => {});
+        return sanitized;
       }
     } catch (e) {}
   }
@@ -2942,17 +3036,35 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
     // Enrich with database metadata (Catbox URLs & Dual-Backup Status)
     try {
       const dbFiles = await getStoredDriveFiles();
-      const folderKeyNorm = (folder ? folder.id : folderKey).toLowerCase();
+      const rawKeyLower = String(folderKey || "").toLowerCase();
+      const slugKey = slugifyFolderName(rawKeyLower);
+      const fIdLower = folder ? String(folder.id).toLowerCase() : "";
+      const fNameLower = folder ? String(folder.name).toLowerCase() : "";
+      const fSlug = folder ? slugifyFolderName(String(folder.id)) : "";
+      const fNameSlug = folder ? slugifyFolderName(fNameLower) : "";
+
+      const checkFolderMatches = (targetFolderId: string) => {
+        const tf = String(targetFolderId || "").toLowerCase();
+        const tfSlug = slugifyFolderName(tf);
+        return (
+          tf === rawKeyLower ||
+          tfSlug === slugKey ||
+          tfSlug === rawKeyLower ||
+          tf === slugKey ||
+          (folder && (
+            tf === fIdLower ||
+            tf === fNameLower ||
+            tfSlug === fSlug ||
+            tfSlug === fNameSlug ||
+            tf === fSlug ||
+            tf === fNameSlug
+          ))
+        );
+      };
 
       // Include files stored in Neon DB for this folder directly without writing to local disk!
       for (const dbf of dbFiles) {
-        if (
-          dbf.folderId.toLowerCase() === folderKeyNorm ||
-          slugifyFolderName(dbf.folderId) === folderKeyNorm ||
-          (folder &&
-            (dbf.folderId.toLowerCase() === folder.name.toLowerCase() ||
-              slugifyFolderName(dbf.folderId) === slugifyFolderName(folder.name)))
-        ) {
+        if (checkFolderMatches(dbf.folderId)) {
           if (!fileMap.has(dbf.name)) {
             totalBytes += dbf.size || 0;
             fileMap.set(dbf.name, {
@@ -2979,13 +3091,7 @@ app.get("/api/drive/files", async (req: Request, res: Response) => {
       // Attach Catbox URLs and prefer Catbox URL for display
       for (const [name, item] of fileMap.entries()) {
         const match = dbFiles.find(
-          (f) =>
-            (f.folderId.toLowerCase() === folderKeyNorm ||
-              slugifyFolderName(f.folderId) === folderKeyNorm ||
-              (folder &&
-                (f.folderId.toLowerCase() === folder.name.toLowerCase() ||
-                  slugifyFolderName(f.folderId) === slugifyFolderName(folder.name)))) &&
-            f.name.toLowerCase() === name.toLowerCase()
+          (f) => checkFolderMatches(f.folderId) && f.name.toLowerCase() === name.toLowerCase()
         );
         if (match) {
           item.catboxUrl = match.catboxUrl || "";
@@ -3191,17 +3297,24 @@ app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, r
     }
 
     let safeName = "";
-    let buffer: Buffer;
+    let buffer: Buffer | null = null;
+    let catboxUrl = (req.body.catboxUrl as string)?.trim() || "";
+    let fileSize = Number(req.body.size) || 0;
 
-    if (req.file) {
+    if (catboxUrl && req.body.filename) {
+      safeName = path.basename(req.body.filename);
+      if (!fileSize) fileSize = 1;
+    } else if (req.file) {
       safeName = path.basename(req.file.originalname);
       buffer = req.file.buffer;
+      fileSize = buffer.length;
     } else if (req.body.filename && req.body.base64) {
       safeName = path.basename(req.body.filename);
       const cleanBase64 = typeof req.body.base64 === "string" && req.body.base64.includes(",")
         ? req.body.base64.split(",")[1]
         : req.body.base64;
       buffer = Buffer.from(cleanBase64, "base64");
+      fileSize = buffer.length;
     } else {
       return res.status(400).json({ success: false, message: "Thiếu dữ liệu tệp hoặc tên tệp" });
     }
@@ -3248,17 +3361,18 @@ app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, r
       console.warn("Folder check/create warning:", errDir);
     }
 
-    // 1. Upload directly to Catbox.moe immediately
-    let catboxUrl = "";
-    try {
-      catboxUrl = await uploadToCatbox(buffer, safeName);
-      console.log(`[Catbox Upload Success] ${safeName} -> ${catboxUrl}`);
-    } catch (cbErr: any) {
-      console.error("Catbox upload error:", cbErr.message);
-      return res.status(500).json({
-        success: false,
-        message: `Lỗi tải tệp lên Catbox.moe: ${cbErr.message}`,
-      });
+    // 1. Upload to Catbox.moe if not pre-uploaded
+    if (!catboxUrl && buffer) {
+      try {
+        catboxUrl = await uploadToCatbox(buffer, safeName);
+        console.log(`[Catbox Upload Success] ${safeName} -> ${catboxUrl}`);
+      } catch (cbErr: any) {
+        console.error("Catbox upload error:", cbErr.message);
+        return res.status(500).json({
+          success: false,
+          message: `Lỗi tải tệp lên Catbox.moe: ${cbErr.message}`,
+        });
+      }
     }
 
     if (!catboxUrl) {
@@ -3272,8 +3386,8 @@ app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, r
     const fileRecord = await upsertDriveFileRecord({
       folderId,
       name: safeName,
-      size: buffer.length,
-      sizeFormatted: formatBytes(buffer.length),
+      size: fileSize,
+      sizeFormatted: formatBytes(fileSize),
       ext: ext.replace(".", "").toUpperCase(),
       localUrl: catboxUrl,
       catboxUrl,
@@ -3282,7 +3396,7 @@ app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, r
 
     // 3. Optional Background GitHub Backup (Async, Non-blocking so user never waits!)
     const token = getEffectiveGithubToken(req);
-    if (token) {
+    if (token && buffer) {
       (async () => {
         try {
           const { githubPath } = resolveFolderPaths(folderId);
@@ -3316,8 +3430,8 @@ app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, r
       file: {
         id: fileRecord.id,
         name: safeName,
-        size: buffer.length,
-        sizeFormatted: formatBytes(buffer.length),
+        size: fileSize,
+        sizeFormatted: formatBytes(fileSize),
         ext: ext.replace(".", "").toUpperCase(),
         url: catboxUrl,
         catboxUrl: catboxUrl,
@@ -3389,6 +3503,134 @@ app.get("/api/drive/db-files", async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
   }
+});
+
+// 8.3. Rename File in Folder (Admin & Authorized Users)
+app.put("/api/drive/files/rename", async (req: Request, res: Response) => {
+  try {
+    const folderId = (req.body?.folderId || req.body?.folder || "fme-ctut") as string;
+    const oldName = (req.body?.oldName || req.body?.filename) as string;
+    let newName = (req.body?.newName || req.body?.name) as string;
+
+    if (!oldName || !newName || typeof oldName !== "string" || typeof newName !== "string") {
+      return res.status(400).json({ success: false, message: "Thiếu tên tệp cũ hoặc tên tệp mới" });
+    }
+
+    const { folder } = await resolveFolder(folderId);
+    const canEdit = checkCanUploadFolder(req, folderId, folder);
+    if (!canEdit) {
+      return res.status(403).json({
+        success: false,
+        message: "Bạn không có quyền đổi tên tệp trong thư mục này!",
+      });
+    }
+
+    const safeOldName = path.basename(oldName.trim());
+    let safeNewName = path.basename(newName.trim());
+
+    // If new name does not have extension, preserve old extension
+    const oldExt = path.extname(safeOldName);
+    const newExt = path.extname(safeNewName);
+    if (!newExt && oldExt) {
+      safeNewName = `${safeNewName}${oldExt}`;
+    }
+
+    if (safeNewName === safeOldName) {
+      return res.json({ success: true, message: "Tên tệp không thay đổi" });
+    }
+
+    if (!isDriveSupportedFile(safeNewName)) {
+      return res.status(400).json({ success: false, message: "Tên hoặc định dạng tệp mới không hợp lệ" });
+    }
+
+    const allFiles = await getStoredDriveFiles();
+    const folderKeyLower = folderId.toLowerCase();
+    const folderSlug = slugifyFolderName(folderId);
+
+    // Find existing file record
+    const targetIdx = allFiles.findIndex(
+      (f) =>
+        (f.folderId.toLowerCase() === folderKeyLower || slugifyFolderName(f.folderId) === folderSlug) &&
+        f.name.toLowerCase() === safeOldName.toLowerCase()
+    );
+
+    // Check if new name already exists in same folder
+    const conflictIdx = allFiles.findIndex(
+      (f) =>
+        (f.folderId.toLowerCase() === folderKeyLower || slugifyFolderName(f.folderId) === folderSlug) &&
+        f.name.toLowerCase() === safeNewName.toLowerCase()
+    );
+
+    if (conflictIdx >= 0) {
+      return res.status(400).json({ success: false, message: `Tệp "${safeNewName}" đã tồn tại trong thư mục này!` });
+    }
+
+    let updatedRecord: DriveFileRecord;
+    const now = new Date().toISOString();
+    const finalExt = path.extname(safeNewName).replace(".", "").toUpperCase() || "FILE";
+    const finalCat = getFileCategory(path.extname(safeNewName).toLowerCase());
+
+    if (targetIdx >= 0) {
+      updatedRecord = {
+        ...allFiles[targetIdx],
+        id: `${allFiles[targetIdx].folderId}:${safeNewName}`,
+        name: safeNewName,
+        ext: finalExt,
+        category: finalCat,
+        updatedAt: now,
+      };
+      allFiles[targetIdx] = updatedRecord;
+    } else {
+      updatedRecord = {
+        id: `${folderId}:${safeNewName}`,
+        folderId,
+        name: safeNewName,
+        size: 0,
+        sizeFormatted: "0 B",
+        ext: finalExt,
+        category: finalCat,
+        localUrl: `/drive-files/${folderId}/${encodeURIComponent(safeNewName)}`,
+        catboxUrl: "",
+        backupStatus: "local_only",
+        createdAt: now,
+        updatedAt: now,
+      };
+      allFiles.unshift(updatedRecord);
+    }
+
+    await saveStoredDriveFiles(allFiles);
+
+    // Rename on local filesystem if exists
+    try {
+      const { localDirs } = resolveFolderPaths(folderId);
+      for (const dir of localDirs) {
+        const oldPath = path.join(dir, safeOldName);
+        const newPath = path.join(dir, safeNewName);
+        if (fs.existsSync(oldPath)) {
+          await fs.promises.rename(oldPath, newPath);
+          console.log(`[Local File Rename] ${oldPath} -> ${newPath}`);
+        }
+      }
+    } catch (fsErr) {
+      console.warn("[Local File Rename Warning]:", fsErr);
+    }
+
+    return res.json({
+      success: true,
+      message: `Đã đổi tên tệp thành "${safeNewName}" thành công!`,
+      file: {
+        ...updatedRecord,
+        downloadUrl: `/api/drive/download?folder=${encodeURIComponent(folderId)}&file=${encodeURIComponent(safeNewName)}`,
+      },
+    });
+  } catch (error: any) {
+    console.error("Lỗi đổi tên tệp:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+app.post("/api/drive/files/rename", (req: Request, res: Response, next: any) => {
+  req.method = "PUT";
+  app._router.handle(req, res, next);
 });
 
 // 9. Delete File from Folder (Admin Only; Catbox & Local allowed; GitHub protected)
