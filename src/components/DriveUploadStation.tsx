@@ -183,47 +183,96 @@ export default function DriveUploadStation({
     });
   };
 
-  // Direct upload to Catbox.moe from browser (bypasses Vercel 4.5MB Serverless limit)
-  const uploadDirectToCatbox = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append("reqtype", "fileupload");
-    formData.append("userhash", "4862d65c4fbf6e0f5433eb011");
+  // Direct upload to Catbox.moe from browser using XHR (real progress + retry support)
+  const uploadDirectToCatbox = (
+    file: File,
+    onProgress?: (pct: number) => void
+  ): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append("reqtype", "fileupload");
+      formData.append("userhash", "4862d65c4fbf6e0f5433eb011");
 
-    let uploadFilename = file.name;
-    const lower = file.name.toLowerCase();
-    if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
-      uploadFilename = uploadFilename.replace(/\.docx?$/i, ".zip");
-    }
-    formData.append("fileToUpload", file, uploadFilename);
+      let uploadFilename = file.name;
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
+        uploadFilename = uploadFilename.replace(/\.docx?$/i, ".zip");
+      }
+      formData.append("fileToUpload", file, uploadFilename);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 mins for large files
+      const xhr = new XMLHttpRequest();
+      // 15 minutes timeout for very large files
+      xhr.timeout = 15 * 60 * 1000;
 
-    try {
-      const response = await fetch("https://catbox.moe/user/api.php", {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errText = await response.text().catch(() => "");
-        throw new Error(`Catbox error (${response.status}): ${errText || "Không thể tải lên"}`);
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+        };
       }
 
-      const url = (await response.text()).trim();
-      if (!url.startsWith("http")) {
-        throw new Error(`Catbox phản hồi: ${url}`);
-      }
-      return url;
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      throw err;
-    }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const url = xhr.responseText.trim();
+          if (url.startsWith("http")) {
+            resolve(url);
+          } else {
+            reject(new Error(`Catbox phản hồi lạ: ${url.slice(0, 200)}` ));
+          }
+        } else {
+          reject(new Error(`Catbox HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 200) || "Lỗi không xác định"}` ));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Lỗi mạng khi tải lên Catbox.moe (có thể bị CORS hoặc mất kết nối)"));
+      xhr.ontimeout = () => reject(new Error("Quá thời gian tải lên Catbox.moe (timeout 15 phút)"));
+      xhr.onabort = () => reject(new Error("Tải lên bị huỷ"));
+
+      xhr.open("POST", "https://catbox.moe/user/api.php");
+      xhr.send(formData);
+    });
   };
 
-  // Upload single file via high-speed FormData with Direct Catbox upload support
+  // Direct upload with retry (3 attempts, exponential backoff)
+  const uploadDirectToCatboxWithRetry = async (
+    file: File,
+    staged: StagedUploadFile
+  ): Promise<string> => {
+    const MAX_RETRIES = 3;
+    let lastErr: Error = new Error("Chưa thử");
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const attemptLabel = MAX_RETRIES > 1 ? ` (lần ${attempt}/${MAX_RETRIES})` : "";
+        const url = await uploadDirectToCatbox(file, (pct) => {
+          setStagedFiles((prev) =>
+            prev.map((item) =>
+              item.id === staged.id
+                ? { ...item, progressText: `Đang tải lên Catbox.moe${attemptLabel}: ${pct}%` }
+                : item
+            )
+          );
+        });
+        return url;
+      } catch (err: any) {
+        lastErr = err;
+        console.warn(`[Catbox] Attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
+        if (attempt < MAX_RETRIES) {
+          const waitMs = attempt * 3000; // 3s, 6s backoff
+          setStagedFiles((prev) =>
+            prev.map((item) =>
+              item.id === staged.id
+                ? { ...item, progressText: `Thử lại sau ${waitMs / 1000}s... (lần ${attempt + 1}/${MAX_RETRIES})` }
+                : item
+            )
+          );
+          await new Promise((res) => setTimeout(res, waitMs));
+        }
+      }
+    }
+    throw lastErr;
+  };
+
+  // Upload single file via direct Catbox upload + DB registration
   const uploadSingleFile = async (staged: StagedUploadFile, targetFolder: string) => {
     if (!adminToken) {
       showToast("❌ Vui lòng đăng nhập tài khoản có quyền để tải lên tệp!");
@@ -233,7 +282,7 @@ export default function DriveUploadStation({
     setStagedFiles((prev) =>
       prev.map((item) =>
         item.id === staged.id
-          ? { ...item, status: "uploading", progressText: "Đang tải siêu tốc lên Catbox.moe..." }
+          ? { ...item, status: "uploading", progressText: "Đang kết nối Catbox.moe..." }
           : item
       )
     );
@@ -244,15 +293,22 @@ export default function DriveUploadStation({
       }
 
       let catboxUrl = "";
-      // Step 1: Direct upload from client to Catbox.moe (bypasses Vercel 4.5MB limit and maximizes speed!)
+      // Step 1: Direct upload from browser to Catbox.moe with retry + progress
       try {
-        catboxUrl = await uploadDirectToCatbox(staged.file);
+        catboxUrl = await uploadDirectToCatboxWithRetry(staged.file, staged);
       } catch (directErr: any) {
-        console.warn("Direct Catbox upload failed/blocked, checking fallback:", directErr);
-        // If direct upload failed and file is large (> 4.5MB) on Vercel
-        if (staged.file.size > 4.5 * 1024 * 1024 && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
-          throw new Error(`Tải trực tiếp lên Catbox thất bại: ${directErr.message || "Lỗi mạng hoặc CORS"}.`);
+        console.warn("Direct Catbox upload failed after retries:", directErr);
+        // On Vercel, server can't receive large files either — surface the real error
+        if (staged.file.size > 4.5 * 1024 * 1024 &&
+            window.location.hostname !== "localhost" &&
+            window.location.hostname !== "127.0.0.1") {
+          throw new Error(
+            `Tải lên Catbox.moe thất bại sau 3 lần thử: ${directErr.message}.\n` +
+            `Gợi ý: Kiểm tra kết nối mạng, thử dùng VPN, hoặc chia nhỏ tệp.`
+          );
         }
+        // On localhost: fallback to server-side upload
+        console.log("[Fallback] Trying server-side upload for localhost...");
       }
 
       setStagedFiles((prev) =>

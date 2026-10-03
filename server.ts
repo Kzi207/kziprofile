@@ -2207,7 +2207,8 @@ async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string>
   form.append("fileToUpload", blob, uploadFilename);
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 300000);
+  // 55s timeout to stay within Vercel's 60s function limit
+  const timeoutId = setTimeout(() => controller.abort(), 55000);
 
   try {
     const response = await fetch("https://catbox.moe/user/api.php", {
