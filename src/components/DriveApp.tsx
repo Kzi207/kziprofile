@@ -1252,33 +1252,40 @@ export default function DriveApp() {
         }
 
         let catboxUrl = "";
-        // Step 1: Direct upload from browser to Catbox (bypasses Vercel 4.5MB Serverless limit)
-        try {
-          const directForm = new FormData();
-          directForm.append("reqtype", "fileupload");
-          directForm.append("userhash", "4862d65c4fbf6e0f5433eb011");
-          let upName = file.name;
-          const lower = file.name.toLowerCase();
-          if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
-            upName = upName.replace(/\.docx?$/i, ".zip");
-          }
-          directForm.append("fileToUpload", file, upName);
+        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        const catboxProxyUrl = (import.meta as any).env?.VITE_CATBOX_PROXY_URL?.trim() || "";
 
-          const cbRes = await fetch("https://catbox.moe/user/api.php", {
-            method: "POST",
-            body: directForm,
-          });
-          if (cbRes.ok) {
-            const returnedUrl = (await cbRes.text()).trim();
-            if (returnedUrl.startsWith("http")) {
-              catboxUrl = returnedUrl;
+        // If a CORS proxy (Cloudflare Worker) is configured, upload directly to proxy
+        if (catboxProxyUrl) {
+          try {
+            const directForm = new FormData();
+            directForm.append("reqtype", "fileupload");
+            directForm.append("userhash", "4862d65c4fbf6e0f5433eb011");
+            let upName = file.name;
+            const lower = file.name.toLowerCase();
+            if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
+              upName = upName.replace(/\.docx?$/i, ".zip");
             }
+            directForm.append("fileToUpload", file, upName);
+
+            const cbRes = await fetch(catboxProxyUrl, {
+              method: "POST",
+              body: directForm,
+            });
+            if (cbRes.ok) {
+              const returnedUrl = (await cbRes.text()).trim();
+              if (returnedUrl.startsWith("http")) {
+                catboxUrl = returnedUrl;
+              }
+            }
+          } catch (cbErr) {
+            console.warn("Proxy upload error, fallback to server:", cbErr);
           }
-        } catch (cbErr) {
-          console.warn("Direct upload error, checking fallback:", cbErr);
-          if (file.size > 4.5 * 1024 * 1024 && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
-            throw new Error(`Tải trực tiếp lên Catbox thất bại. Tệp > 4.5MB không thể chuyển qua Vercel Proxy.`);
-          }
+        } else if (!isLocalhost && file.size > 4.2 * 1024 * 1024) {
+          throw new Error(
+            `Tệp "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB) vượt giới hạn 4.2MB của Vercel Serverless.\n` +
+            `Catbox.moe chặn CORS trực tiếp từ trình duyệt. Vui lòng chọn tệp nhỏ hơn 4.2MB hoặc cài đặt Cloudflare Worker Proxy.`
+          );
         }
 
         const headers: Record<string, string> = {};

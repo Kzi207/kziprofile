@@ -183,9 +183,10 @@ export default function DriveUploadStation({
     });
   };
 
-  // Direct upload to Catbox.moe from browser using XHR (real progress + retry support)
+  // Direct upload to Catbox.moe via CORS Proxy (or custom proxy) using XHR
   const uploadDirectToCatbox = (
     file: File,
+    proxyUrl: string,
     onProgress?: (pct: number) => void
   ): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -201,7 +202,6 @@ export default function DriveUploadStation({
       formData.append("fileToUpload", file, uploadFilename);
 
       const xhr = new XMLHttpRequest();
-      // 15 minutes timeout for very large files
       xhr.timeout = 15 * 60 * 1000;
 
       if (xhr.upload && onProgress) {
@@ -216,26 +216,27 @@ export default function DriveUploadStation({
           if (url.startsWith("http")) {
             resolve(url);
           } else {
-            reject(new Error(`Catbox phản hồi lạ: ${url.slice(0, 200)}` ));
+            reject(new Error(`Proxy phản hồi: ${url.slice(0, 200)}`));
           }
         } else {
-          reject(new Error(`Catbox HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 200) || "Lỗi không xác định"}` ));
+          reject(new Error(`Proxy HTTP ${xhr.status}: ${xhr.responseText?.slice(0, 200) || "Lỗi không xác định"}`));
         }
       };
 
-      xhr.onerror = () => reject(new Error("Lỗi mạng khi tải lên Catbox.moe (có thể bị CORS hoặc mất kết nối)"));
-      xhr.ontimeout = () => reject(new Error("Quá thời gian tải lên Catbox.moe (timeout 15 phút)"));
+      xhr.onerror = () => reject(new Error("Lỗi mạng khi kết nối tới CORS Proxy"));
+      xhr.ontimeout = () => reject(new Error("Quá thời gian tải lên qua CORS Proxy (timeout 15 phút)"));
       xhr.onabort = () => reject(new Error("Tải lên bị huỷ"));
 
-      xhr.open("POST", "https://catbox.moe/user/api.php");
+      xhr.open("POST", proxyUrl);
       xhr.send(formData);
     });
   };
 
-  // Direct upload with retry (3 attempts, exponential backoff)
+  // Direct upload with retry via CORS Proxy (3 attempts, exponential backoff)
   const uploadDirectToCatboxWithRetry = async (
     file: File,
-    staged: StagedUploadFile
+    staged: StagedUploadFile,
+    proxyUrl: string
   ): Promise<string> => {
     const MAX_RETRIES = 3;
     let lastErr: Error = new Error("Chưa thử");
@@ -243,11 +244,11 @@ export default function DriveUploadStation({
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const attemptLabel = MAX_RETRIES > 1 ? ` (lần ${attempt}/${MAX_RETRIES})` : "";
-        const url = await uploadDirectToCatbox(file, (pct) => {
+        const url = await uploadDirectToCatbox(file, proxyUrl, (pct) => {
           setStagedFiles((prev) =>
             prev.map((item) =>
               item.id === staged.id
-                ? { ...item, progressText: `Đang tải lên Catbox.moe${attemptLabel}: ${pct}%` }
+                ? { ...item, progressText: `Đang tải qua Proxy${attemptLabel}: ${pct}%` }
                 : item
             )
           );
@@ -255,9 +256,9 @@ export default function DriveUploadStation({
         return url;
       } catch (err: any) {
         lastErr = err;
-        console.warn(`[Catbox] Attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
+        console.warn(`[Catbox Proxy] Attempt ${attempt}/${MAX_RETRIES} failed:`, err.message);
         if (attempt < MAX_RETRIES) {
-          const waitMs = attempt * 3000; // 3s, 6s backoff
+          const waitMs = attempt * 3000;
           setStagedFiles((prev) =>
             prev.map((item) =>
               item.id === staged.id
@@ -272,7 +273,53 @@ export default function DriveUploadStation({
     throw lastErr;
   };
 
-  // Upload single file via direct Catbox upload + DB registration
+  // Upload to local / Vercel backend using XHR for smooth progress tracking
+  const uploadViaServer = (
+    file: File,
+    targetFolder: string,
+    token: string,
+    onProgress?: (pct: number) => void
+  ): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", targetFolder);
+
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = 10 * 60 * 1000;
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        try {
+          const json = JSON.parse(xhr.responseText || "{}");
+          if (xhr.status >= 200 && xhr.status < 300 && json.success) {
+            resolve(json);
+          } else {
+            reject(new Error(json.message || `Lỗi máy chủ (${xhr.status})`));
+          }
+        } catch {
+          reject(new Error(`Lỗi máy chủ (${xhr.status}): ${xhr.responseText?.slice(0, 100) || "Không phản hồi"}`));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Lỗi kết nối máy chủ khi tải lên tệp!"));
+      xhr.ontimeout = () => reject(new Error("Quá thời gian kết nối máy chủ (timeout 10 phút)"));
+      xhr.onabort = () => reject(new Error("Tải lên bị huỷ"));
+
+      xhr.open("POST", "/api/drive/upload");
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.send(formData);
+    });
+  };
+
+  // Upload single file via server (or CORS proxy if configured) + DB registration
   const uploadSingleFile = async (staged: StagedUploadFile, targetFolder: string) => {
     if (!adminToken) {
       showToast("❌ Vui lòng đăng nhập tài khoản có quyền để tải lên tệp!");
@@ -282,7 +329,7 @@ export default function DriveUploadStation({
     setStagedFiles((prev) =>
       prev.map((item) =>
         item.id === staged.id
-          ? { ...item, status: "uploading", progressText: "Đang kết nối Catbox.moe..." }
+          ? { ...item, status: "uploading", progressText: "Đang chuẩn bị tải lên..." }
           : item
       )
     );
@@ -293,39 +340,41 @@ export default function DriveUploadStation({
       }
 
       let catboxUrl = "";
-      // Step 1: Direct upload from browser to Catbox.moe with retry + progress
-      try {
-        catboxUrl = await uploadDirectToCatboxWithRetry(staged.file, staged);
-      } catch (directErr: any) {
-        console.warn("Direct Catbox upload failed after retries:", directErr);
-        // On Vercel, server can't receive large files either — surface the real error
-        if (staged.file.size > 4.5 * 1024 * 1024 &&
-            window.location.hostname !== "localhost" &&
-            window.location.hostname !== "127.0.0.1") {
-          throw new Error(
-            `Tải lên Catbox.moe thất bại sau 3 lần thử: ${directErr.message}.\n` +
-            `Gợi ý: Kiểm tra kết nối mạng, thử dùng VPN, hoặc chia nhỏ tệp.`
-          );
+      const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      const catboxProxyUrl = (import.meta as any).env?.VITE_CATBOX_PROXY_URL?.trim() || "";
+
+      // If a CORS proxy (e.g. Cloudflare Worker) is configured, upload directly to proxy
+      if (catboxProxyUrl) {
+        try {
+          catboxUrl = await uploadDirectToCatboxWithRetry(staged.file, staged, catboxProxyUrl);
+        } catch (directErr: any) {
+          console.warn("Direct Catbox upload via proxy failed:", directErr);
+          if (!isLocalhost && staged.file.size > 4.2 * 1024 * 1024) {
+            throw new Error(`Tải lên qua Proxy thất bại: ${directErr.message}`);
+          }
         }
-        // On localhost: fallback to server-side upload
-        console.log("[Fallback] Trying server-side upload for localhost...");
+      } else if (!isLocalhost && staged.file.size > 4.2 * 1024 * 1024) {
+        // On Vercel without proxy: Vercel serverless limit is 4.5MB, and Catbox.moe blocks browser CORS
+        throw new Error(
+          `Tệp (${(staged.file.size / (1024 * 1024)).toFixed(1)} MB) vượt giới hạn 4.2MB của Vercel Serverless.\n` +
+          `Catbox.moe chặn CORS trực tiếp từ trình duyệt. Vui lòng chọn tệp nhỏ hơn 4.2MB hoặc thiết lập Cloudflare Worker Proxy (VITE_CATBOX_PROXY_URL).`
+        );
       }
 
-      setStagedFiles((prev) =>
-        prev.map((item) =>
-          item.id === staged.id
-            ? { ...item, progressText: "Đang lưu thông tin vào CSDL Neon..." }
-            : item
-        )
-      );
-
-      const headers: Record<string, string> = {};
-      if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
-
-      let res: Response;
+      let data: any;
       if (catboxUrl) {
-        headers["Content-Type"] = "application/json";
-        res = await fetch("/api/drive/upload", {
+        setStagedFiles((prev) =>
+          prev.map((item) =>
+            item.id === staged.id
+              ? { ...item, progressText: "Đang lưu thông tin vào CSDL Neon..." }
+              : item
+          )
+        );
+
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (adminToken) headers["Authorization"] = `Bearer ${adminToken}`;
+
+        const res = await fetch("/api/drive/upload", {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -335,21 +384,29 @@ export default function DriveUploadStation({
             size: staged.file.size,
           }),
         });
+
+        data = await safeParseJson(res, "Tải lên thất bại");
       } else {
-        const formData = new FormData();
-        formData.append("file", staged.file);
-        formData.append("folder", targetFolder);
-        res = await fetch("/api/drive/upload", {
-          method: "POST",
-          headers,
-          body: formData,
+        // Direct to backend server: backend handles Catbox upload without browser CORS limitations!
+        data = await uploadViaServer(staged.file, targetFolder, adminToken, (pct) => {
+          setStagedFiles((prev) =>
+            prev.map((item) =>
+              item.id === staged.id
+                ? {
+                    ...item,
+                    progressText:
+                      pct < 100
+                        ? `Đang tải lên máy chủ: ${pct}%`
+                        : "Đang lưu lên Catbox.moe & CSDL Neon...",
+                  }
+                : item
+            )
+          );
         });
       }
 
-      const data = await safeParseJson(res, "Tải lên thất bại");
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || "Tải lên thất bại");
+      if (!data || !data.success) {
+        throw new Error(data?.message || "Tải lên thất bại");
       }
 
       setStagedFiles((prev) =>
