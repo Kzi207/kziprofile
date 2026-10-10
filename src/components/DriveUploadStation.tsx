@@ -1,3 +1,4 @@
+import { getDriveUploadConfig } from "../driveUploadConfig";
 import React, { useState, useEffect, useRef } from "react";
 import {
   Upload,
@@ -340,8 +341,7 @@ export default function DriveUploadStation({
       }
 
       let catboxUrl = "";
-      const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-      const catboxProxyUrl = (import.meta as any).env?.VITE_CATBOX_PROXY_URL?.trim() || "";
+      const { proxyUrl: catboxProxyUrl, maxServerUploadBytes } = await getDriveUploadConfig(adminToken, targetFolder);
 
       // If a CORS proxy (e.g. Cloudflare Worker) is configured, upload directly to proxy
       if (catboxProxyUrl) {
@@ -349,11 +349,11 @@ export default function DriveUploadStation({
           catboxUrl = await uploadDirectToCatboxWithRetry(staged.file, staged, catboxProxyUrl);
         } catch (directErr: any) {
           console.warn("Direct Catbox upload via proxy failed:", directErr);
-          if (!isLocalhost && staged.file.size > 4.2 * 1024 * 1024) {
+          if (staged.file.size > maxServerUploadBytes) {
             throw new Error(`Tải lên qua Proxy thất bại: ${directErr.message}`);
           }
         }
-      } else if (!isLocalhost && staged.file.size > 4.2 * 1024 * 1024) {
+      } else if (staged.file.size > maxServerUploadBytes) {
         // On Vercel without proxy: Vercel serverless limit is 4.5MB, and Catbox.moe blocks browser CORS
         throw new Error(
           `Tệp (${(staged.file.size / (1024 * 1024)).toFixed(1)} MB) vượt giới hạn 4.2MB của Vercel Serverless.\n` +

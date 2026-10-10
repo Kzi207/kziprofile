@@ -64,14 +64,14 @@
     "name": "đồ tồii",
     "folder": "đồ tồii",
     "description": "hiii",
-    "isShared": true,
+    "isShared": false,
     "shareToken": "sh_eblm1fmuh2enzc",
     "hasPassword": true,
     "passwordHash": "$2b$10$uG3a9YD2Exn1MbvijgtvUOhPteQeX8HxM7r2/HspbxGrVam9zGH3e",
     "allowEdit": true,
     "allowDownload": true,
     "createdAt": "2026-09-25T14:37:28.680Z",
-    "updatedAt": "2026-09-25T15:49:00.893Z"
+    "updatedAt": "2026-10-03T08:12:58.050Z"
   },
   {
     "id": "music",

@@ -1,3 +1,4 @@
+import { getDriveUploadConfig } from "../driveUploadConfig";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import JSZip from "jszip";
 import {
@@ -1252,8 +1253,7 @@ export default function DriveApp() {
         }
 
         let catboxUrl = "";
-        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-        const catboxProxyUrl = (import.meta as any).env?.VITE_CATBOX_PROXY_URL?.trim() || "";
+        const { proxyUrl: catboxProxyUrl, maxServerUploadBytes } = await getDriveUploadConfig(adminToken, targetFolderKey);
 
         // If a CORS proxy (Cloudflare Worker) is configured, upload directly to proxy
         if (catboxProxyUrl) {
@@ -1272,16 +1272,21 @@ export default function DriveApp() {
               method: "POST",
               body: directForm,
             });
-            if (cbRes.ok) {
-              const returnedUrl = (await cbRes.text()).trim();
-              if (returnedUrl.startsWith("http")) {
-                catboxUrl = returnedUrl;
-              }
+            const returnedUrl = (await cbRes.text()).trim();
+            if (!cbRes.ok) {
+              throw new Error(`Proxy HTTP ${cbRes.status}: ${returnedUrl.slice(0, 200)}`);
             }
-          } catch (cbErr) {
-            console.warn("Proxy upload error, fallback to server:", cbErr);
+            if (!/^https:\/\/files\.catbox\.moe\/[^\s]+$/.test(returnedUrl)) {
+              throw new Error(`Catbox phản hồi: ${returnedUrl.slice(0, 200) || "Không có liên kết tệp"}`);
+            }
+            catboxUrl = returnedUrl;
+          } catch (cbErr: any) {
+            console.warn("Proxy upload error:", cbErr);
+            if (file.size > maxServerUploadBytes) {
+              throw new Error(`Tải lên qua Proxy thất bại: ${cbErr.message}`);
+            }
           }
-        } else if (!isLocalhost && file.size > 4.2 * 1024 * 1024) {
+        } else if (file.size > maxServerUploadBytes) {
           throw new Error(
             `Tệp "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB) vượt giới hạn 4.2MB của Vercel Serverless.\n` +
             `Catbox.moe chặn CORS trực tiếp từ trình duyệt. Vui lòng chọn tệp nhỏ hơn 4.2MB hoặc cài đặt Cloudflare Worker Proxy.`
@@ -1528,6 +1533,21 @@ export default function DriveApp() {
       setFiles([]);
     }
   }, [activeFolder?.id, activeFolder?.name, fetchFiles]);
+
+  // Expired stored credentials must not leave the UI looking authenticated.
+  useEffect(() => {
+    const onSessionExpired = () => {
+      setAdminToken(null);
+      setCurrentUser(null);
+      for (const key of ["drive_auth_token", "drive_admin_token", "cyber_auth_token", "drive_current_user", "drive_admin_user"]) {
+        localStorage.removeItem(key);
+      }
+      setLoginError("Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.");
+      setShowLoginModal(true);
+    };
+    window.addEventListener("drive-session-expired", onSessionExpired);
+    return () => window.removeEventListener("drive-session-expired", onSessionExpired);
+  }, []);
 
   // Handle Login
   const handleLogin = async (e: React.FormEvent) => {

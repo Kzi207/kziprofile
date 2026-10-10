@@ -2207,8 +2207,8 @@ async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string>
   form.append("fileToUpload", blob, uploadFilename);
 
   const controller = new AbortController();
-  // 55s timeout to stay within Vercel's 60s function limit
-  const timeoutId = setTimeout(() => controller.abort(), 55000);
+  const timeoutMs = process.env.VERCEL ? 55000 : 5 * 60 * 1000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch("https://catbox.moe/user/api.php", {
@@ -2216,8 +2216,6 @@ async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string>
       body: form,
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
-
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
       throw new Error(`Upload lỗi (${response.status}): ${errText || "Không thể lưu tệp"}`);
@@ -2231,9 +2229,11 @@ async function uploadToCatbox(buffer: Buffer, filename: string): Promise<string>
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === "AbortError") {
-      throw new Error("Tải lên thất bại do mạng bị gián đoạn hoặc quá thời gian (Timeout 5 phút).");
+      throw new Error(`Tải lên Catbox quá thời gian (${timeoutMs / 1000} giây). Vui lòng thử lại hoặc sử dụng proxy tải lên.`);
     }
     throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -3283,9 +3283,34 @@ app.get("/api/drive/download", async (req: Request, res: Response) => {
   }
 });
 
+// Report the actual hosting limit, including deployments on custom domains.
+app.get("/api/drive/upload-config", async (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+  if (!getAuthenticatedDriveUser(req)) {
+    return res.status(401).json({ success: false, message: "Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại." });
+  }
+  try {
+    const folderId = typeof req.query.folder === "string" ? req.query.folder.trim() : "";
+    if (!folderId) return res.status(400).json({ success: false, message: "Vui lòng chọn thư mục tải lên." });
+    const { folder } = await resolveFolder(folderId);
+    if (!checkCanUploadFolder(req, folderId, folder)) {
+      return res.status(403).json({ success: false, message: "Tài khoản của bạn không có quyền tải lên thư mục này." });
+    }
+    return res.json({
+    proxyUrl: process.env.CATBOX_PROXY_URL?.trim() || process.env.VITE_CATBOX_PROXY_URL?.trim() || "",
+    maxServerUploadBytes: process.env.VERCEL ? Math.floor(4.2 * 1024 * 1024) : 200 * 1024 * 1024,
+    });
+  } catch {
+    return res.status(500).json({ success: false, message: "Không kiểm tra được quyền tải lên. Vui lòng thử lại." });
+  }
+});
+
 // 8. Upload File to Folder (Dual Storage: Local + Catbox.moe + DB) - Admin & Authorized Users
 app.post("/api/drive/upload", driveUpload.single("file"), async (req: Request, res: Response) => {
   try {
+    if (!getAuthenticatedDriveUser(req)) {
+      return res.status(401).json({ success: false, message: "Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại." });
+    }
     const folderId = (req.body.folder as string)?.trim() || "fme-ctut";
     const { folder, folderName } = await resolveFolder(folderId);
 
